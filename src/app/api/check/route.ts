@@ -3,6 +3,7 @@
 
 import { askClaude, ClaudeError, type Part } from "@/lib/claude";
 import { firstJsonObject } from "@/lib/json";
+import { LOOKALIKE_RULE, partsPrompt, readPartLines, type PartLine } from "@/lib/parts";
 import { parseIssueBox, parseIssueKind, type IssueBox, type IssueKind } from "@/lib/issueBox";
 
 const MAX_IMAGE_CHARS = 4_000_000;
@@ -22,6 +23,7 @@ type CheckRequest = {
   previous?: string; // manual picture of the previous step finished, data URL (optional)
   instruction?: string; // what this step asks for, if known
   watchFor?: string[]; // common mistakes to look for
+  parts?: PartLine[]; // every part of this step, described by appearance (optional; older clients don't send it)
 };
 
 const SYSTEM_PROMPT = `You check one step of a build against its instruction manual.
@@ -95,6 +97,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Body must be JSON." }, { status: 400 });
   }
   const { frame, expected, previous, instruction, watchFor } = body;
+  const stepParts = readPartLines(body.parts);
   if (!isImage(frame) || !isImage(expected) || (previous !== undefined && !isImage(previous))) {
     return Response.json({ error: "Send `frame` and `expected` (and optionally `previous`) as image data URLs." }, { status: 400 });
   }
@@ -110,6 +113,9 @@ export async function POST(request: Request) {
   const notes = [
     instruction && `This step: ${instruction}`,
     watchFor?.length && `Common mistakes here: ${watchFor.join("; ")}`,
+    stepParts.length &&
+      `PARTS LIST for this step:\n${partsPrompt(stepParts)}\n${LOOKALIKE_RULE} ` +
+        "If you're unsure a piece is the right one, set step_complete false with confidence below 0.5.",
   ].filter(Boolean);
   parts.push({ type: "text", text: notes.length ? notes.join("\n") : "Check this step." });
 

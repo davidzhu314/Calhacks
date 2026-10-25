@@ -10,7 +10,8 @@
     "test:commands": "node --experimental-strip-types --no-warnings scripts/test-commands.mjs",
     "test:boxes": "node --experimental-strip-types --no-warnings scripts/test-boxes.mjs",
     "test:ar": "node --experimental-strip-types --no-warnings scripts/test-ar-guide.mjs",
-    "test": "vitest run && npm run test:boxes && npm run test:commands && npm run test:ar"
+    "test:parts": "node --experimental-strip-types --no-warnings scripts/test-parts.mjs",
+    "test": "vitest run && npm run test:boxes && npm run test:commands && npm run test:ar && npm run test:parts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",

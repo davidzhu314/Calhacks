@@ -16,6 +16,7 @@ import CameraFeed, { type CameraHandle } from "@/components/CameraFeed";
 import ARGuideOverlay from "@/components/ARGuideOverlay";
 import { useArGuide } from "@/components/useArGuide";
 import PieceHologram from "@/components/PieceHologram";
+import { describePart, partLines } from "@/lib/parts";
 import { cutOutPiece, type Cutout } from "@/lib/cutout";
 import ManualPanel from "@/components/ManualPanel";
 import StepBrowser from "@/components/StepBrowser";
@@ -342,7 +343,7 @@ export default function BuildView() {
     if (!job) {
       job = withGrid(target)
         .then((image) =>
-          fetch("/api/locate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image, part: step.parts[i].name }) }),
+          fetch("/api/locate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image, part: describePart(step.parts[i]), parts: partLines(step.parts) }) }),
         )
         .then((r) => (r.ok ? (r.json() as Promise<LocateResult>) : null))
         .catch(() => null);
@@ -663,7 +664,7 @@ export default function BuildView() {
       const res = await fetch("/api/check", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ frame, expected: target, previous: previous ?? undefined, instruction: step.instruction, watchFor: step.watchFor }),
+        body: JSON.stringify({ frame, expected: target, previous: previous ?? undefined, instruction: step.instruction, watchFor: step.watchFor, parts: partLines(step.parts) }),
       });
       const data = await res.json();
       if (request !== checkRequest.current || browserOpenRef.current) return;

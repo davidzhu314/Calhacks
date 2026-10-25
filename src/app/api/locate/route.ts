@@ -2,6 +2,7 @@
 
 import { askClaude, ClaudeError } from "@/lib/claude";
 import { firstJsonObject } from "@/lib/json";
+import { LOOKALIKE_RULE, partsPrompt, readPartLines } from "@/lib/parts";
 
 const MAX_IMAGE_CHARS = 4_000_000;
 
@@ -29,8 +30,14 @@ function toBox(b: unknown): Box | null {
   return { x: l, y: t, w: rt - l, h: bt - t };
 }
 
+function findText(part: string, parts: ReturnType<typeof readPartLines>): string {
+  if (!parts.length) return `Find this part: ${part}`;
+  return `Find this part: ${part}\nAll parts in this step's parts box:\n${partsPrompt(parts)}\n${LOOKALIKE_RULE} Box only the named part; never box a different one.`;
+}
+
 export async function POST(request: Request) {
-  let body: { image?: unknown; part?: unknown };
+  // parts (optional): every part of this step, described by appearance, so lookalikes in the parts box aren't confused
+  let body: { image?: unknown; part?: unknown; parts?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -49,7 +56,7 @@ export async function POST(request: Request) {
       system: SYSTEM_PROMPT,
       parts: [
         { type: "image", dataUrl: image },
-        { type: "text", text: `Find this part: ${part.trim()}` },
+        { type: "text", text: findText(part.trim(), readPartLines(body.parts)) },
       ],
     });
     const r = firstJsonObject(text) as { callout?: unknown; placed?: unknown } | null;

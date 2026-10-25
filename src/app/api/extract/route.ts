@@ -12,6 +12,7 @@ export type ExtractedPart = {
   shape: "brick" | "plate" | "tile" | "slope" | "round" | "hardware" | "panel" | "other";
   studsX?: number; // LEGO only
   studsY?: number;
+  visual_description?: string; // "2x4 lime green plate": color, size, shape, to tell lookalikes apart (missing on older readings)
 };
 
 export type ExtractedStep = {
@@ -48,12 +49,14 @@ For each entry:
   say where they go (left, right, front, on top of...). For a sub-panel, describe just that panel's action.
 - parts: the parts shown for that step (LEGO callout box, IKEA parts beside the step), with quantities.
   For LEGO bricks, plates and tiles, give studsX and studsY (a 2x4 brick is 2 by 4). color: a CSS hex close to the real color.
+  visual_description: at most 8 words naming color, size and shape the way you'd tell it apart from lookalikes
+  ("2x4 lime green plate", "1x2 dark red slope", "long silver screw, flat head"). Use the exact shade (lime vs green).
 - watchFor: 0-2 easy mistakes (orientation, which side, which hole, short vs long screw).
 - box: the tight area of that step's (or sub-panel's) picture, including its number and parts box, as whole-number
   percentages of the page measured with the grid: {"left": 0-100, "top": 0-100, "right": 0-100, "bottom": 0-100}.
 
 Reply with JSON only, no prose:
-{"steps": [{"number": 8, "sub": "1/4", "instruction": "...", "parts": [{"name": "...", "color": "#rrggbb", "qty": 1, "shape": "hardware"}], "watchFor": ["..."], "box": {"left": 5, "top": 15, "right": 50, "bottom": 28}}]}`;
+{"steps": [{"number": 8, "sub": "1/4", "instruction": "...", "parts": [{"name": "...", "visual_description": "...", "color": "#rrggbb", "qty": 1, "shape": "hardware"}], "watchFor": ["..."], "box": {"left": 5, "top": 15, "right": 50, "bottom": 28}}]}`;
 
 function parse(text: string): ExtractedStep[] | null {
   try {
@@ -81,6 +84,9 @@ function parse(text: string): ExtractedStep[] | null {
             shape: (p.shape as ExtractedPart["shape"]) ?? "other",
             studsX: p.studsX ? Number(p.studsX) : undefined,
             studsY: p.studsY ? Number(p.studsY) : undefined,
+            ...(typeof p.visual_description === "string" && p.visual_description.trim()
+              ? { visual_description: p.visual_description.trim().slice(0, 80) }
+              : {}),
           })),
           watchFor: Array.isArray(s.watchFor) ? s.watchFor.map(String) : [],
           box: sane ? { x: left, y: top, w: right - left, h: bottom - top } : { x: 0, y: 0, w: 1, h: 1 },

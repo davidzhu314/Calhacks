@@ -2,7 +2,7 @@
 // without asking Claude. Only whole phrases match: "what color is the piece in step 8?" is a question, not a command.
 
 export type Command =
-  | { kind: "next" | "back" | "repeat" | "check" | "stop" | "locate" }
+  | { kind: "next" | "back" | "repeat" | "check" | "stop" | "locate" | "show-where" | "show-guide" | "hide-guide" | "replay-guide" | "rescan-guide" | "align-guide" | "rotate-guide" }
   | { kind: "goto"; step: number };
 
 const ONES: Record<string, number> = {
@@ -40,6 +40,13 @@ export function normalize(text: string): string {
 }
 
 const FIXED: [Command["kind"], RegExp][] = [
+  ["show-where", /^(?:show me where|where does it go|where does this go|show me)$/],
+  ["show-guide", /^(?:show guide|turn on ar)$/],
+  ["hide-guide", /^(?:hide guide|hide the guide|turn off ar)$/],
+  ["replay-guide", /^(?:replay|show it again)$/],
+  ["rescan-guide", /^(?:rescan|find it again)$/],
+  ["align-guide", /^(?:align|realign the guide)$/],
+  ["rotate-guide", /^(?:rotate it|turn it)$/],
   ["next", /^(?:next|next step|next one|continue|go on|move on|keep going|go to the next step|go to next step|go next)$/],
   ["back", /^(?:back|go back|step back|previous|previous step|last step|go to the previous step|go to previous step)$/],
   ["repeat", /^(?:repeat|repeat that|repeat the step|repeat step|again|say that again|say it again|come again|what do i do|what do i do now|what do i do next|what now)$/],

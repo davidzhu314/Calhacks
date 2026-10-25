@@ -39,12 +39,10 @@ try {
   await page.getByRole("button", { name: "Tap reference stud A on camera" }).click({ position: { x: 85, y: 290 } });
   await page.getByRole("button", { name: "Tap reference stud B on camera" }).click({ position: { x: 225, y: 290 } });
   await page.getByLabel("Placement ghost").locator("rect").waitFor({ timeout: 5000 });
-  await page.getByLabel("Required loose piece").waitFor({ timeout: 12000 });
-  assert.deepEqual(guideModes, ["source"], "stored placement only looks up the loose piece");
+  assert.deepEqual(guideModes, [], "stored placement never calls the guide API");
   assert.equal(checkCalls, 0);
   const ghost = page.getByLabel("Placement ghost");
   assert.match(await ghost.textContent(), /Step 1: place here · 2D guide/);
-  assert.equal(await page.getByLabel("Required loose piece").locator("rect").getAttribute("stroke"), "#67e8f9");
   const mapped = (await ghost.getAttribute("transform")).match(/translate\(([-\d.]+) ([-\d.]+)\)/);
   assert.ok(mapped && Math.abs(Number(mapped[1]) - 145) < 2 && Math.abs(Number(mapped[2]) - 330) < 2, "two camera taps project the stored stud offset through object-cover");
   const beforeDrag = await ghost.getAttribute("transform");
@@ -77,8 +75,7 @@ try {
   await page.getByRole("button", { name: "Go to step 2" }).first().click();
   await page.getByRole("heading", { name: /Attach the second green half-circle/ }).waitFor();
   await ghost.locator("rect").waitFor();
-  for (let i = 0; guideModes.length < 2 && i < 100; i++) await new Promise((resolve) => setTimeout(resolve, 100));
-  assert.deepEqual(guideModes, ["source", "source"], "later stored step reuses stud placement and makes one source lookup");
+  assert.deepEqual(guideModes, [], "later stored step also avoids guide API calls");
   assert.equal(await ghost.evaluate((node) => getComputedStyle(node).animationName), "none", "reduced motion keeps the ghost static");
   await page.setViewportSize({ width: 844, height: 390 });
   await page.waitForFunction(() => document.querySelector('svg[aria-label="2D guide ghost"]')?.getAttribute("viewBox") === "0 0 844 390");
@@ -94,7 +91,7 @@ try {
   await page.getByRole("button", { name: "Check build" }).click();
   await page.waitForFunction(() => document.querySelectorAll("[data-issue-box]").length > 0);
   assert.equal(checkCalls, 1);
-  assert.equal(guideCalls, 2);
+  assert.equal(guideCalls, 0);
   await page.evaluate(async () => {
     const db = await new Promise((resolve, reject) => { const req = indexedDB.open("keyval-store", 1); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
     await new Promise((resolve, reject) => { const tx = db.transaction("keyval", "readwrite"); tx.objectStore("keyval").put({ id: "t2", source: "lego", title: "Detached assembly test", subtitle: "Local", pdfPath: "/manual-pdf/lego/6455750.pdf", page: 8, stepIdx: 1, addedAt: Date.now(), openedAt: Date.now() }, "manual:t2"); tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); });
@@ -105,7 +102,7 @@ try {
   await page.getByRole("heading", { name: /axle|connector|tower/i }).first().waitFor({ timeout: 20000 });
   await page.getByTestId("ar-toggle").click();
   await page.getByTestId("ar-placement").waitFor({ timeout: 15000 });
-  assert.deepEqual(guideModes, ["source", "source", "ground", "fine"], "detached step uses one coarse and one fine camera request");
+  assert.deepEqual(guideModes, ["ground", "fine"], "detached step uses one coarse and one fine camera request");
   assert.match(await page.getByTestId("ar-placement").textContent(), /Step 7: place here · approx\. 2D guide/);
   const approxBefore = await page.getByTestId("ar-placement").getAttribute("transform");
   await page.getByRole("button", { name: /AR assistant; drag/ }).click();
@@ -122,14 +119,14 @@ try {
   await page.getByRole("button", { name: "Rescan" }).click();
   await page.getByText("Build not in view").waitFor({ timeout: 15000 });
   assert.equal(await page.getByTestId("ar-placement").count(), 0, "invisible assembly has no placement marker");
-  assert.equal(guideCalls, 5, "rescan makes one bounded request");
+  assert.equal(guideCalls, 3, "rescan makes one bounded request");
   await page.waitForTimeout(4200);
-  assert.equal(guideCalls, 5, "an unchanged failed view does not trigger another model call");
+  assert.equal(guideCalls, 3, "an unchanged failed view does not trigger another model call");
   await page.getByTestId("ar-toggle").click();
   await page.getByRole("link", { name: /Hub/ }).first().click();
-  assert.equal(guideCalls, 5, "leaving the build does not start grounding");
+  assert.equal(guideCalls, 3, "leaving the build does not start grounding");
   assert.deepEqual(errors, []);
-  console.log(`AR browser test passed: ${guideModes.filter((mode) => mode === "source").length} source lookups, ${guideModes.filter((mode) => mode !== "source").length} detached fallback calls, ${checkCalls} check`);
+  console.log(`AR browser test passed: no stored-step calls, ${guideModes.length} detached fallback calls, ${checkCalls} check`);
 } finally {
   await browser.close();
 }

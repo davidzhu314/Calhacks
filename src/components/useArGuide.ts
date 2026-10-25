@@ -11,12 +11,13 @@ import { mayGround, responseIsCurrent, viewReadyForRetry } from "@/lib/arSchedul
 import type { PartLine } from "@/lib/parts";
 
 export type GuidePhase = "off" | "finding" | "guiding" | "degraded" | "lost";
-type Input = { enabled: boolean; key: string; camera: RefObject<CameraHandle | null>; target: string | null; previous: string | null; instruction: string; part: string; parts: PartLine[]; blocked: boolean; sourceOnly?: boolean };
+type Input = { enabled: boolean; key: string; selection: number; camera: RefObject<CameraHandle | null>; target: string | null; previous: string | null; instruction: string; part: string; parts: PartLine[]; blocked: boolean; sourceOnly?: boolean };
 const MOVED = .13;
 
-export function useArGuide({ enabled, key, camera, target, previous, instruction, part, parts, blocked, sourceOnly = false }: Input) {
+export function useArGuide({ enabled, key, selection, camera, target, previous, instruction, part, parts, blocked, sourceOnly = false }: Input) {
   const [phase, setPhase] = useState<GuidePhase>("off");
   const [guide, setGuide] = useState<ArGuide | null>(null);
+  const [guideScope, setGuideScope] = useState({ key, selection });
   const [adjusting, setAdjusting] = useState(false);
   const [message, setMessage] = useState("");
   const [rotation, setRotation] = useState(0);
@@ -29,18 +30,21 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
   const candidate = useRef<ArGuide | null>(null);
   const requestId = useRef(0);
   const busy = useRef(false);
+  const pending = useRef<AbortController | null>(null);
   const noFrameCount = useRef(0);
   const lastRequest = useRef(0);
   const due = useRef(false);
   const activeKey = useRef(key);
-  const current = useRef({ enabled, key, target, previous, instruction, part, parts, blocked, sourceOnly });
-  useEffect(() => { current.current = { enabled, key, target, previous, instruction, part, parts, blocked, sourceOnly }; }, [enabled, key, target, previous, instruction, part, parts, blocked, sourceOnly]);
+  const current = useRef({ enabled, key, selection, target, previous, instruction, part, parts, blocked, sourceOnly });
+  useEffect(() => { current.current = { enabled, key, selection, target, previous, instruction, part, parts, blocked, sourceOnly }; }, [enabled, key, selection, target, previous, instruction, part, parts, blocked, sourceOnly]);
   useEffect(() => () => { requestId.current++; }, []);
 
   useEffect(() => {
-    if (activeKey.current !== key && cache.current.get(activeKey.current)?.pinned) cache.current.delete(activeKey.current);
     activeKey.current = key;
     requestId.current++;
+    pending.current?.abort();
+    cache.current.clear();
+    sourceCache.current.clear();
     baseline.current = null;
     failedView.current = null;
     previousView.current = null;
@@ -49,12 +53,19 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setAdjusting(false);
     setRotation(0);
-    anchor.current = sourceOnly ? null : cache.current.get(key) ?? null;
-    const stored = sourceOnly ? sourceCache.current.get(key) ?? null : anchor.current?.guide ?? null;
-    setGuide(stored);
-    setPhase(!enabled ? "off" : !stored ? "finding" : !sourceOnly || stored.partBox ? "guiding" : stored.visible ? "degraded" : "lost");
-    due.current = enabled && !stored;
-  }, [key, enabled, sourceOnly]);
+    anchor.current = null;
+    setGuide(null);
+    setGuideScope({ key, selection });
+    setPhase(enabled ? "finding" : "off");
+    due.current = enabled;
+  }, [key, selection, enabled]);
+
+  useEffect(() => {
+    if (!blocked) { if (enabled && !anchor.current && !guide) due.current = true; return; }
+    pending.current?.abort();
+    requestId.current++;
+    due.current = false;
+  }, [blocked, enabled]); // eslint-disable-line react-hooks/exhaustive-deps -- re-arm only on a check/browser transition
 
   useEffect(() => {
     if (!enabled || blocked) return;
@@ -73,8 +84,10 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
       lastRequest.current = Date.now();
       const id = ++requestId.current;
       const requestKey = state.key;
+      const ctrl = new AbortController();
+      pending.current = ctrl;
       setPhase(anchor.current ? "degraded" : "finding");
-      void fetch("/api/ar-guide", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: state.sourceOnly ? "source" : "ground", frame, expected: state.target, previous: state.previous ?? undefined, instruction: state.instruction, part: state.part, parts: state.parts }) })
+      void fetch("/api/ar-guide", { method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl.signal, body: JSON.stringify({ mode: state.sourceOnly ? "source" : "ground", frame, expected: state.target, previous: state.previous ?? undefined, instruction: state.instruction, part: state.part, parts: state.parts }) })
         .then(async (res) => { const data = await res.json(); if (!res.ok) throw new Error(data.error || "Could not locate assembly."); return parseGuide(data); })
         .then(async (coarse) => {
           if (state.sourceOnly) return coarse;
@@ -82,7 +95,7 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
           if (!responseIsCurrent({ key: requestKey, id }, { key: activeKey.current, id: requestId.current, enabled: current.current.enabled, blocked: current.current.blocked })) return coarse;
           try {
             const crop = await cropAssembly(frame, coarse.assemblyBox);
-            const res = await fetch("/api/ar-guide", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "fine", frame: crop.image, expected: state.target, previous: state.previous ?? undefined, instruction: state.instruction, part: state.part, parts: state.parts }) });
+            const res = await fetch("/api/ar-guide", { method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl.signal, body: JSON.stringify({ mode: "fine", frame: crop.image, expected: state.target, previous: state.previous ?? undefined, instruction: state.instruction, part: state.part, parts: state.parts }) });
             if (!res.ok) return coarse;
             const fine = parseFineGuide(await res.json());
             if (!fine?.visible || !fine.placement) return coarse;
@@ -95,6 +108,7 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
         .then((result) => {
           if (!responseIsCurrent({ key: requestKey, id }, { key: activeKey.current, id: requestId.current, enabled: current.current.enabled, blocked: current.current.blocked })) return;
           if (!result) throw new Error("Guide response was invalid.");
+          setGuideScope({ key: requestKey, selection: state.selection });
           if (state.sourceOnly) {
             const sourceGuide = { ...result, placement: undefined };
             sourceCache.current.set(requestKey, sourceGuide);
@@ -137,7 +151,7 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
           setPhase("degraded");
           setMessage(`Couldn't locate, tap to position. ${error instanceof Error ? error.message : "Try a clearer view."}`);
         })
-        .finally(() => { busy.current = false; });
+        .finally(() => { if (pending.current === ctrl) pending.current = null; busy.current = false; });
     }, 250);
     return () => window.clearInterval(timer);
   }, [enabled, blocked, camera]);
@@ -180,6 +194,7 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
 
   const rescan = useCallback(() => {
     requestId.current++;
+    pending.current?.abort();
     cache.current.delete(activeKey.current);
     sourceCache.current.delete(activeKey.current);
     anchor.current = null;
@@ -192,7 +207,7 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
     setPhase("finding");
     setMessage("");
   }, []);
-  const invalidate = useCallback(() => { requestId.current++; due.current = false; }, []);
+  const invalidate = useCallback(() => { requestId.current++; pending.current?.abort(); due.current = false; }, []);
   const adjust = useCallback((point: ArPoint) => {
     const currentGuide = guide ? { ...guide, visible: true } : { visible: true, status: "ambiguous" as const, confidence: 0, explanation: "User positioned guide", orientationDegrees: null };
     const prior = anchor.current ?? { guide: currentGuide, seenAt: Date.now(), quality: 0, pinned: false };
@@ -205,5 +220,6 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
     setAdjusting(false);
   }, [guide]);
   const resetAdjustment = useCallback(() => { rescan(); setAdjusting(false); }, [rescan]);
-  return { phase, guide, message, adjusting, setAdjusting, rotation, setRotation, rescan, invalidate, adjust, resetAdjustment };
+  const visibleScope = guideScope.key === key && guideScope.selection === selection;
+  return { phase: visibleScope ? phase : enabled ? "finding" as GuidePhase : "off" as GuidePhase, guide: visibleScope ? guide : null, message: visibleScope ? message : "", adjusting: visibleScope && adjusting, setAdjusting, rotation: visibleScope ? rotation : 0, setRotation, rescan, invalidate, adjust, resetAdjustment };
 }

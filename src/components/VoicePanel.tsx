@@ -32,7 +32,7 @@ function MicIcon({ off, className }: { off?: boolean; className?: string }) {
 
 type Props = {
   getFrame?: () => string | null; // latest camera frame, grabbed when you stop talking
-  context?: Pick<AssistRequest, "manual" | "step">;
+  context?: Pick<AssistRequest, "manual" | "step" | "ar">;
   muted?: boolean; // BuildSight's voice is muted (the build screen's Voice on/off)
   compact?: boolean; // phones with the step card collapsed: just a round mic button
   // Spoken build commands ("next", "go to step 8"): returns a short confirmation if it handled the phrase
@@ -59,6 +59,7 @@ export default function VoicePanel({ getFrame, context, muted, compact, onComman
   const props = useRef({ getFrame, context, muted, onCommand });
   props.current = { getFrame, context, muted, onCommand };
   const asking = useRef<AbortController | null>(null);
+  const commandPauseUntil = useRef(0);
 
   useEffect(() => {
     const l = new Listener({
@@ -75,6 +76,7 @@ export default function VoicePanel({ getFrame, context, muted, compact, onComman
         // Commands act at once, no Claude call; the step change (if any) is read aloud by the build screen.
         const handled = props.current.onCommand?.(text);
         if (handled) {
+          commandPauseUntil.current = Date.now() + 900;
           setLines((ls) => [...ls, { who: "you", text }, { who: "assistant", text: handled }]);
           setFaded(false);
           setStatus(speaker().speaking ? "speaking" : "idle");
@@ -113,7 +115,7 @@ export default function VoicePanel({ getFrame, context, muted, compact, onComman
         setLive(false);
         setStatus("idle");
       });
-    }, 300); // short gap so the end of our own voice isn't picked up
+    }, Math.max(300, commandPauseUntil.current - Date.now())); // pause after commands and our own voice
     return () => clearTimeout(t);
   }, [live, status]);
 

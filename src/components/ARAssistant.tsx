@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { clampToBox, type Point } from "@/lib/arGeometry";
 
-type Props = { status: string; instruction: string; aligning: boolean; adjusting: boolean; hasPlacement: boolean; onAlign: () => void; onRescan: () => void; onAdjust: () => void; onRotate: (direction: number) => void; onReset: () => void; onReplay: () => void; onHide: () => void; children?: React.ReactNode };
+type Props = { status: string; placementPhrase?: string; instruction: string; aligning: boolean; adjusting: boolean; hasPlacement: boolean; onAlign: () => void; onRescan: () => void; onAdjust: () => void; onRotate: (direction: number) => void; onReset: () => void; onReplay: () => void; onHide: () => void; children?: React.ReactNode };
 const W = 224, H = 290;
 let safe = { top: 0, right: 0, bottom: 0, left: 0 };
 function measureSafeArea() {
@@ -72,6 +72,7 @@ export default function ARAssistant(p: Props) {
     {open && <div className="hud-panel mt-2 max-h-[calc(100dvh-9rem)] w-56 overflow-y-auto rounded-2xl border border-cyan-300/30 bg-slate-950/95 p-3 text-xs text-white shadow-2xl backdrop-blur-xl">
       <p className="font-semibold text-cyan-100">AR assistant</p>
       <p role="status" className="mt-1 text-white/80">{p.status}</p>
+      {p.placementPhrase && <p className="mt-2 rounded-lg border border-cyan-300/20 bg-cyan-300/10 px-2 py-1.5 text-cyan-100">{p.placementPhrase}</p>}
       <p className="mt-2 line-clamp-2 text-white/55">{p.instruction}</p>
       {p.children}
       <div className="mt-3 grid grid-cols-2 gap-1.5 [&_button]:rounded-lg [&_button]:border [&_button]:border-white/15 [&_button]:px-2 [&_button]:py-2 [&_button]:text-left [&_button]:transition [&_button:hover]:bg-cyan-300/15">

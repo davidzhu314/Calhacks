@@ -12,6 +12,14 @@ export type AssistRequest = {
   history?: { role: "user" | "assistant"; text: string }[];
   step?: { number: number | string; instruction: string; parts?: string[]; watchFor?: string[]; selectedPart?: string };
   manual?: string; // title of what they're building
+  ar?: {
+    enabled: boolean;
+    placementWords?: string;
+    studs?: { ref: string; dx: number; dy: number; rotation: number; layer: number; w: number; h: number; source: string };
+    aligned: boolean;
+    approximate: boolean;
+    selectedPart?: string;
+  };
 };
 
 const SYSTEM_PROMPT = `You are BuildSight, an expert builder talking someone through a LEGO set or IKEA furniture build, hands-free.
@@ -22,6 +30,7 @@ Your words are spoken aloud by a voice, so write for the ear:
 - If there is a safety risk (tipping furniture, wall anchors, power tools, sharp edges, heavy lifting, small parts near young children), say the warning first.
 - You may get a photo from their camera. Describe pieces by color, size and shape. If the photo is blurry, dark, or doesn't show what you need, say so and ask them to move closer or show a specific part. Don't guess.
 - Use the current step from the manual when it's given. If what you see doesn't match it, say what's off and how to fix it.
+- The AR guide is only a 2D estimate. Use its stud description when given. For placement or orientation questions, if the guide is unaligned, lost, or approximate, explicitly say the position is approximate; never claim exact camera alignment.
 - Be warm and calm, like a patient senior colleague.`;
 
 function context(req: AssistRequest): string {
@@ -32,6 +41,16 @@ function context(req: AssistRequest): string {
     if (req.step.parts?.length) lines.push(`Parts for this step: ${req.step.parts.join(", ")}.`);
     if (req.step.selectedPart) lines.push(`They tapped this part on screen, so "this piece" likely means: ${req.step.selectedPart}.`);
     if (req.step.watchFor?.length) lines.push(`Common mistakes here: ${req.step.watchFor.join("; ")}.`);
+  }
+  if (req.ar) {
+    const ar = req.ar;
+    lines.push(`AR guide: ${!ar.enabled ? "off" : ar.approximate || !ar.aligned ? "approximate or not aligned" : "aligned 2D stud guide"}.`);
+    if (ar.selectedPart) lines.push(`Selected AR part: ${ar.selectedPart.slice(0, 160)}.`);
+    if (ar.placementWords) lines.push(`Stored placement in words: ${ar.placementWords.slice(0, 240)}`);
+    if (ar.studs && Number.isFinite(ar.studs.dx) && Number.isFinite(ar.studs.dy)) {
+      const s = ar.studs;
+      lines.push(`Stored stud placement: reference ${s.ref.slice(0, 40)}, offset (${s.dx}, ${s.dy}) studs, rotation ${s.rotation} degrees, layer ${s.layer}, footprint ${s.w} by ${s.h} studs, source ${s.source.slice(0, 40)}.`);
+    }
   }
   return lines.join("\n");
 }

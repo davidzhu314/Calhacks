@@ -16,7 +16,8 @@
     "test:parts": "node --experimental-strip-types --no-warnings scripts/test-parts.mjs",
     "test:e2e:local": "node scripts/e2e-local-start.mjs",
     "test:e2e:ar": "node scripts/e2e-ar-guide.mjs",
-    "test": "vitest run && npm run test:boxes && npm run test:commands && npm run test:ar && npm run test:parts"
+    "test:e2e:voice": "node scripts/e2e-ar-voice.mjs",
+    "test": "vitest run && npm run test:boxes && npm run test:commands && node --experimental-strip-types --no-warnings scripts/test-placement-phrase.mjs && npm run test:ar && npm run test:parts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",

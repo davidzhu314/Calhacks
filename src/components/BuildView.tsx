@@ -19,6 +19,7 @@ import ARAssistant from "@/components/ARAssistant";
 import { useArGuide } from "@/components/useArGuide";
 import { useBuildRegistration } from "@/components/useBuildRegistration";
 import { loadPlacements, type PlacementCatalog } from "@/lib/placements";
+import { placementPhrase } from "@/lib/placementPhrase";
 import type { Point } from "@/lib/arGeometry";
 import PieceHologram from "@/components/PieceHologram";
 import { describePart, partLines } from "@/lib/parts";
@@ -255,6 +256,8 @@ export default function BuildView() {
   const latestPreview = useRef(createLatestGuard());
   const browseButton = useRef<HTMLButtonElement>(null);
   const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const announcedStep = useRef<string | null>(null);
+  const announcedLost = useRef<string | null>(null);
 
   const [manual, setManual] = useState<Manual | null>(null);
   const [doc, setDoc] = useState<PageSource | null>(null);
@@ -276,11 +279,8 @@ export default function BuildView() {
   const [muted, setMuted] = useState(false);
   const [cameraStatus, setCameraStatus] = useState<{ state: "starting" | "ready" | "error"; message?: string }>({ state: "starting" });
   const [arEnabled, setArEnabled] = useState(false);
-  const [arPartIdx, setArPartIdx] = useState(0);
+  const [arVisual, setArVisual] = useState<{ key: string; partIdx: number; nudge: Point; rotation: number; replay: number }>({ key: "", partIdx: 0, nudge: { x: 0, y: 0 }, rotation: 0, replay: 0 });
   const [placementCatalog, setPlacementCatalog] = useState<PlacementCatalog | null | undefined>(undefined);
-  const [arNudge, setArNudge] = useState<Point>({ x: 0, y: 0 });
-  const [arRotation, setArRotation] = useState(0);
-  const [arReplay, setArReplay] = useState(0);
   const [showManual, setShowManual] = useState(false); // true = blue "hologram" tint; default is the real colors
   const [zoomOpen, setZoomOpen] = useState(false); // full-screen zoom viewer for the manual picture
   // Phones get a swipeable step card: swipe down to see your build, up for full details.
@@ -289,6 +289,13 @@ export default function BuildView() {
   const compact = isPhone && !sheetOpen;
 
   const stepKey = `${page}-${stepIdx}`;
+  const freshArVisual = { key: stepKey, partIdx: 0, nudge: { x: 0, y: 0 }, rotation: 0, replay: 0 };
+  const currentArVisual = arVisual.key === stepKey ? arVisual : freshArVisual;
+  const editArVisual = useCallback((patch: Partial<typeof arVisual>) => setArVisual((old) => ({ ...(old.key === stepKey ? old : { key: stepKey, partIdx: 0, nudge: { x: 0, y: 0 }, rotation: 0, replay: 0 }), ...patch })), [stepKey]);
+  const arPartIdx = currentArVisual.partIdx;
+  const arNudge = currentArVisual.nudge;
+  const arRotation = currentArVisual.rotation;
+  const arReplay = currentArVisual.replay;
   const check = forStep(checkState, stepKey);
   const setCheck = useCallback((c: Check | null) => setCheckState(c && { ...c, key: stepKey }), [stepKey]);
   const verdict = check?.state === "result" ? checkVerdict(check.result) : null;
@@ -351,15 +358,12 @@ export default function BuildView() {
   // A catalog entry describes the step's primary part; other selected parts need camera grounding.
   const basePlacement = storedPlacement?.ref === "base" && arPartIdx === 0 ? storedPlacement : null;
   const registration = useBuildRegistration(camera, arEnabled, manual?.id ?? "", placementCatalog?.points ?? DEFAULT_REFERENCE);
-  const ar = useArGuide({ enabled: arEnabled && placementCatalog !== undefined && phase.kind === "ready" && cameraStatus.state === "ready", key: `${stepKey}-${arPartIdx}`, camera, target: targetKey === stepKey ? target : null, previous, instruction: step?.instruction ?? "", part: arPart ? describePart(arPart) : "", parts: partLines(step?.parts ?? []), blocked: browserOpen || !!check, sourceOnly: !!basePlacement });
+  const ar = useArGuide({ enabled: arEnabled && !basePlacement && placementCatalog !== undefined && phase.kind === "ready" && cameraStatus.state === "ready", key: stepKey, selection: arPartIdx, camera, target: targetKey === stepKey ? target : null, previous, instruction: step?.instruction ?? "", part: arPart ? describePart(arPart) : "", parts: partLines(step?.parts ?? []), blocked: browserOpen || !!check });
   const invalidateAr = ar.invalidate;
   const rescanAr = ar.rescan;
-  useEffect(() => { // navigation resets the selected guide piece
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setArPartIdx(0);
-    setArNudge({ x: 0, y: 0 });
-    setArRotation(0);
-  }, [stepKey]);
+  const effectivePlacement = basePlacement ? { ...basePlacement, dx: basePlacement.dx + Math.round(arNudge.x), dy: basePlacement.dy + Math.round(arNudge.y), rotation: (((basePlacement.rotation + arRotation) % 360 + 360) % 360) as 0 | 90 | 180 | 270 } : null;
+  const storedWords = effectivePlacement ? placementPhrase(effectivePlacement) : "";
+  const arWords = arEnabled ? storedWords : "";
 
   // Finds part i of this step in the manual picture (once per part; shared by tap-to-find and the hologram).
   function locatePart(i: number): Promise<LocateResult | null> | null {
@@ -613,8 +617,18 @@ export default function BuildView() {
 
   // 4. read each new step aloud
   useEffect(() => {
-    if (phase.kind === "ready" && step && !muted) speak(spokenStep(step));
-  }, [phase.kind, step, muted]);
+    if (phase.kind !== "ready" || !step || muted || announcedStep.current === stepKey) return;
+    announcedStep.current = stepKey;
+    speak(`${spokenStep(step)}${arWords ? ` ${arWords}` : ""}`);
+  }, [phase.kind, step, muted, stepKey, arWords]);
+  useEffect(() => {
+    const lost = arEnabled && (registration.message.startsWith("Guide lost alignment") || ar.message.startsWith("Guide lost alignment"));
+    if (!lost) { announcedLost.current = null; return; }
+    if (!muted && announcedLost.current !== stepKey) {
+      announcedLost.current = stepKey;
+      speak("Lost alignment, tap two studs to realign");
+    }
+  }, [arEnabled, registration.message, ar.message, muted, stepKey]);
   useEffect(() => stopSpeaking, []);
 
   // Back to step 1: page 1 forward, skipping cover/intro pages as usual.
@@ -713,8 +727,8 @@ export default function BuildView() {
   }, [step, target, previous, check?.state, muted, go, cancelAdvance, setCheck, rescanAr]);
 
   const speakStep = useCallback(() => {
-    if (step && !muted) speak(spokenStep(step));
-  }, [step, muted]);
+    if (step && !muted) speak(`${spokenStep(step)}${arWords ? ` ${arWords}` : ""}`);
+  }, [step, muted, arWords]);
 
   // Jumps to step n: on this page at once; otherwise reads pages ahead (then behind) until one has step n.
   // Step numbers can repeat in a book (sub-builds restart at 1), so the nearest match wins.
@@ -998,6 +1012,38 @@ export default function BuildView() {
       }
       if (phase.kind === "loading") return "One moment, still loading.";
       switch (c.kind) {
+        case "show-where": {
+          setArEnabled(true);
+          editArVisual({ replay: arReplay + 1 });
+          const phrase = storedWords || "The approximate 2D guide is looking for this step.";
+          const spoken = storedWords && !registration.registration ? `Tap two studs to align. ${storedWords}` : phrase;
+          if (!muted) speak(spoken);
+          return spoken;
+        }
+        case "show-guide":
+          setArEnabled(true);
+          return "AR Guide on.";
+        case "hide-guide":
+          setArEnabled(false);
+          return "AR Guide hidden.";
+        case "replay-guide":
+          setArEnabled(true);
+          editArVisual({ replay: arReplay + 1 });
+          return "Replaying the guide.";
+        case "rescan-guide":
+          setArEnabled(true);
+          ar.rescan();
+          if (basePlacement) registration.align();
+          return basePlacement ? "Tap two studs to realign." : "Rescanning this step.";
+        case "align-guide":
+          setArEnabled(true);
+          registration.align();
+          return "Tap stud A, then stud B.";
+        case "rotate-guide":
+          setArEnabled(true);
+          if (basePlacement) editArVisual({ rotation: arRotation + 90 });
+          else ar.setRotation((value) => value + 90);
+          return "Rotated the guide ninety degrees.";
         case "next":
           go(1);
           return "Next step.";
@@ -1007,7 +1053,8 @@ export default function BuildView() {
         case "repeat":
           if (!step) return null;
           speakStep();
-          return spokenStep(step);
+          if (arEnabled) editArVisual({ replay: arReplay + 1 });
+          return `${spokenStep(step)}${arWords ? ` ${arWords}` : ""}`;
         case "check":
           runCheck();
           return "Checking your build…";
@@ -1019,8 +1066,16 @@ export default function BuildView() {
           return "Finding your place…";
       }
     },
-    [phase.kind, go, step, speakStep, runCheck, goToStep, findMyPlace],
+    [phase.kind, go, step, speakStep, runCheck, goToStep, findMyPlace, arEnabled, arReplay, arRotation, arWords, storedWords, muted, registration, ar, basePlacement, editArVisual],
   );
+
+  // Local browser tests dispatch the exact voice handler without requiring an Azure microphone token.
+  useEffect(() => {
+    if (window.location.hostname !== "localhost" || !new URLSearchParams(window.location.search).has("voiceTest")) return;
+    const testCommand = (event: Event) => onCommand((event as CustomEvent<string>).detail);
+    window.addEventListener("buildsight:voice-command", testCommand);
+    return () => window.removeEventListener("buildsight:voice-command", testCommand);
+  }, [onCommand]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1051,8 +1106,8 @@ export default function BuildView() {
   return (
     <main className="relative h-dvh w-full overflow-hidden bg-ink text-white">
       <CameraFeed ref={camera} onStatusChange={setCameraStatus} />
-      {arEnabled && (basePlacement || registration.tapIndex !== null) && (!check || verdict === "pass") && <BuildPlacementOverlay camera={camera} registration={basePlacement ? registration.registration : null} placement={basePlacement ?? ALIGN_PLACEHOLDER} part={arPart} stepLabel={step ? stepLabel(step) : "Next step"} sourceBox={ar.guide?.visible ? ar.guide.partBox ?? null : null} tapIndex={registration.tapIndex} onTap={registration.tap} adjusting={ar.adjusting} nudge={arNudge} onNudge={setArNudge} rotation={arRotation} replay={arReplay} success={verdict === "pass"} />}
-      {!basePlacement && <ARGuideOverlay key={`${stepKey}-${arPartIdx}`} camera={camera} phase={check ? "off" : ar.phase} guide={ar.guide} message={ar.message} part={arPart} stepLabel={step ? stepLabel(step) : "Next step"} registration={registration.registration} adjusting={ar.adjusting} rotation={ar.rotation} replay={arReplay} approximate onAdjust={ar.adjust} />}
+      {arEnabled && (basePlacement || registration.tapIndex !== null) && (!check || verdict === "pass") && <BuildPlacementOverlay key={stepKey} camera={camera} registration={basePlacement ? registration.registration : null} placement={basePlacement ?? ALIGN_PLACEHOLDER} part={arPart} stepLabel={step ? stepLabel(step) : "Next step"} sourceBox={null} tapIndex={registration.tapIndex} onTap={registration.tap} adjusting={ar.adjusting} nudge={arNudge} onNudge={(point) => editArVisual({ nudge: point })} rotation={arRotation} replay={arReplay} success={verdict === "pass"} />}
+      {!basePlacement && <ARGuideOverlay key={stepKey} camera={camera} phase={check ? "off" : ar.phase} guide={ar.guide} message={ar.message} part={arPart} stepLabel={step ? stepLabel(step) : "Next step"} registration={registration.registration} adjusting={ar.adjusting} rotation={ar.rotation} replay={arReplay} approximate onAdjust={ar.adjust} />}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-ink/70 via-transparent to-ink/80" />
       {/* the mistake boxes on the live camera too, while the camera stays where it was for the check */}
       {check?.state === "result" && verdict === "fix" && showBoxes && (
@@ -1109,8 +1164,8 @@ export default function BuildView() {
         </div>
       </header>
 
-      {arEnabled && phase.kind === "ready" && !check && <ARAssistant status={cameraStatus.state === "error" ? cameraStatus.message || "Camera unavailable" : basePlacement ? registration.tapIndex !== null ? registration.message : registration.registration ? registration.message || "Guiding from the first plate" : registration.message || "Align to the first plate" : ar.message || (ar.phase === "finding" ? "Locating assembly" : "Approximate 2D guide")} instruction={step?.instruction ?? ""} aligning={registration.tapIndex !== null} adjusting={ar.adjusting} hasPlacement={!!(basePlacement ? registration.registration : ar.guide?.placement)} onAlign={registration.align} onRescan={() => { ar.rescan(); if (basePlacement && !registration.registration) registration.align(); }} onAdjust={() => ar.setAdjusting((v) => !v)} onRotate={(delta) => basePlacement ? setArRotation((v) => v + delta) : ar.setRotation((v) => v + delta)} onReset={() => { setArNudge({ x: 0, y: 0 }); setArRotation(0); if (!basePlacement) ar.resetAdjustment(); }} onReplay={() => setArReplay((v) => v + 1)} onHide={() => setArEnabled(false)}>
-        {step && step.parts.length > 1 && <div className="mt-2 flex gap-1 overflow-x-auto">{step.parts.map((piece, i) => <button key={i} onClick={() => setArPartIdx(i)} aria-pressed={arPartIdx === i} className={`shrink-0 rounded-md px-2 py-1 ${arPartIdx === i ? "bg-cyan-300 text-slate-950" : "bg-white/10 text-white"}`}>{i + 1}. {piece.name}</button>)}</div>}
+      {arEnabled && phase.kind === "ready" && !check && <ARAssistant status={cameraStatus.state === "error" ? cameraStatus.message || "Camera unavailable" : basePlacement ? registration.tapIndex !== null ? registration.message : registration.registration ? registration.message || "Guiding from the first plate" : registration.message || "Align to the first plate" : ar.message || (ar.phase === "finding" ? "Locating assembly" : "Approximate 2D guide")} placementPhrase={arWords} instruction={step?.instruction ?? ""} aligning={registration.tapIndex !== null} adjusting={ar.adjusting} hasPlacement={!!(basePlacement ? registration.registration : ar.guide?.placement)} onAlign={registration.align} onRescan={() => { ar.rescan(); if (basePlacement) registration.align(); }} onAdjust={() => ar.setAdjusting((v) => !v)} onRotate={(delta) => basePlacement ? editArVisual({ rotation: arRotation + delta }) : ar.setRotation((v) => v + delta)} onReset={() => { editArVisual({ nudge: { x: 0, y: 0 }, rotation: 0 }); if (!basePlacement) ar.resetAdjustment(); }} onReplay={() => editArVisual({ replay: arReplay + 1 })} onHide={() => setArEnabled(false)}>
+        {step && step.parts.length > 1 && <div className="mt-2 flex gap-1 overflow-x-auto">{step.parts.map((piece, i) => <button key={i} onClick={() => editArVisual({ partIdx: i })} aria-pressed={arPartIdx === i} className={`shrink-0 rounded-md px-2 py-1 ${arPartIdx === i ? "bg-cyan-300 text-slate-950" : "bg-white/10 text-white"}`}>{i + 1}. {piece.name}</button>)}</div>}
       </ARAssistant>}
 
       {/* reticle: shows while a check is running */}
@@ -1188,7 +1243,8 @@ export default function BuildView() {
           onCommand={onCommand}
           context={{
             manual: manual?.title,
-            step: step && { number: step.sub ? `${step.number} (${step.sub.replace("/", " of ")})` : step.number, instruction: step.instruction, parts: step.parts.map((p) => `${p.qty}x ${p.name}`), watchFor: step.watchFor },
+            step: step && { number: step.sub ? `${step.number} (${step.sub.replace("/", " of ")})` : step.number, instruction: step.instruction, parts: step.parts.map((p) => `${p.qty}x ${p.name}`), watchFor: step.watchFor, selectedPart: arPart ? describePart(arPart) : undefined },
+            ar: { enabled: arEnabled, placementWords: storedWords || undefined, studs: effectivePlacement ? { ref: effectivePlacement.ref, dx: effectivePlacement.dx, dy: effectivePlacement.dy, rotation: effectivePlacement.rotation, layer: effectivePlacement.layer, w: effectivePlacement.footprint.w, h: effectivePlacement.footprint.h, source: effectivePlacement.source } : undefined, aligned: !!(basePlacement && registration.registration), approximate: !basePlacement || !registration.registration || ar.phase === "lost" || ar.phase === "degraded", selectedPart: arPart ? describePart(arPart) : undefined },
           }}
         />
       </div>

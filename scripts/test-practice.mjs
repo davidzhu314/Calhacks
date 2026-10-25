@@ -20,7 +20,7 @@ const THREE = await import("three");
 const { LEGO, PC, legoSpan, legoBox, roundStuds, tubeCentres, slope45Profile, dimmFits, bracketWidth } = await import("../src/components/practice/dims.ts");
 const { nearestLegoColor, LEGO_COLORS } = await import("../src/components/practice/colors.ts");
 const { snapHeld, evaluate, rotationMatches } = await import("../src/components/practice/engine.ts");
-const { parrot, PARROT_DATA_COLORS } = await import("../src/components/practice/packs/parrot.ts");
+const { parrot, PARROT_DATA_COLORS, TRUNK } = await import("../src/components/practice/packs/parrot.ts");
 const { pc, DIMM, PCIE, GPU } = await import("../src/components/practice/packs/pc.ts");
 const { buildPart } = await import("../src/components/practice/build/index.ts");
 const { solid } = await import("../src/components/practice/build/materials.ts");
@@ -108,20 +108,23 @@ let offGrid = 0;
 let offLayer = 0;
 const tops = [0];
 for (const p of parrot.placements) {
+  if (p.tilt) continue; // trunk pieces lie sideways in the workspace; checked as a stack below
   const g = build(parrot.parts[p.part].spec);
   g.rotation.y = p.rotY;
   g.position.set(...p.pos);
   g.updateMatrixWorld(true);
-  const s = g.getObjectByName("studs");
   const m = new THREE.Matrix4();
   const v = new THREE.Vector3();
-  for (let i = 0; i < s.count; i++) {
-    s.getMatrixAt(i, m);
-    v.setFromMatrixPosition(m).applyMatrix4(g.matrixWorld);
-    const fx = (v.x - 4) / 8;
-    const fz = (v.z - 4) / 8;
-    if (Math.abs(fx - Math.round(fx)) > 1e-3 || Math.abs(fz - Math.round(fz)) > 1e-3) offGrid++;
-  }
+  g.traverse((s) => {
+    if (s.name !== "studs") return;
+    for (let i = 0; i < s.count; i++) {
+      s.getMatrixAt(i, m);
+      v.setFromMatrixPosition(m).applyMatrix4(s.matrixWorld);
+      const fx = (v.x - 4) / 8;
+      const fz = (v.z - 4) / 8;
+      if (Math.abs(fx - Math.round(fx)) > 1e-3 || Math.abs(fz - Math.round(fz)) > 1e-3) offGrid++;
+    }
+  });
   const layer = p.pos[1] / LEGO.PLATE_H;
   if (Math.abs(layer - Math.round(layer)) > 1e-6) offLayer++;
   const rests = tops.some((t) => Math.abs(t - p.pos[1]) < 1e-6);
@@ -131,6 +134,23 @@ for (const p of parrot.placements) {
 }
 eq("every stud lands on the 8 mm grid (centres at 4 + 8k)", offGrid, 0);
 eq("every part sits on a 3.2 mm layer", offLayer, 0);
+
+// Trunk (steps 6–10): pieces stack end to end along the axle, and the mounted axle ends on the base plate.
+near("9L axle length", size(build({ kind: "legoAxle", length: 9, color: "#A0A5A9" })).y, 71.8, 0.02);
+near("axle cross width", size(build({ kind: "legoAxle", length: 9, color: "#A0A5A9" })).x, LEGO.AXLE_SPAN, 0.02);
+const conn = size(build({ kind: "legoAxleConnector", color: "#582A12" }));
+near("2L axle connector length", conn.y, 15.8, 0.05);
+near("axle connector diameter", conn.x, LEGO.CONNECTOR_D, 0.05);
+const stack = [["gray", LEGO.PLATE_H], ["brick3", LEGO.BRICK_H], ["bars", LEGO.PLATE_H], ["brick2", LEGO.BRICK_H], ["brick1", LEGO.BRICK_H], ["tile", LEGO.PLATE_H]];
+let gaps = 0;
+for (let i = 1; i < stack.length; i++) if (Math.abs(TRUNK[stack[i][0]] - (TRUNK[stack[i - 1][0]] + stack[i - 1][1])) > 1e-6) gaps++;
+eq("trunk pieces sit end to end (no gaps or overlaps)", gaps, 0);
+near("connector starts on top of the tile", TRUNK.axle + TRUNK.connectorOnAxle, TRUNK.tile + LEGO.PLATE_H, 0.001);
+near("mounted axle ends on the base plate's top face", TRUNK.mountY + TRUNK.axle, LEGO.PLATE_H, 0.001);
+near("trunk mounts on the step 5 brick", TRUNK.mountY, parrot.placements.find((p) => p.id === "brick-2").pos[1] + LEGO.BRICK_H, 0.001);
+const trunkTilted = parrot.placements.filter((p) => p.tilt);
+eq("trunk pieces slide on without turning", trunkTilted.every((p) => p.lockRotation), true);
+eq("step 10 takes in every trunk piece", parrot.placements.find((p) => p.id === "mount").consumes.length, trunkTilted.length);
 
 const data = JSON.parse(readFileSync(new URL("../public/steps/6455750.json", import.meta.url)));
 for (const { page, step, part, partId } of PARROT_DATA_COLORS) {

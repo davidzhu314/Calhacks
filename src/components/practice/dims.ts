@@ -18,7 +18,15 @@ export const LEGO = {
   PIN_HOLE_D: 4.8,
   BEVEL: 0.2, // edge bevel used on every part
   STUD_BEVEL: 0.2,
+  AXLE_SPAN: 4.8, // Technic axle cross: 4.8 mm across
+  AXLE_ARM: 1.8, // each arm 1.8 mm wide
+  CONNECTOR_D: 6.0, // smooth axle connector outer diameter
 } as const;
+
+/** Technic axle / connector length for n studs: n x 8 mm minus the 0.2 mm clearance (9L → 71.8 mm). */
+export function axleLength(studs: number): number {
+  return legoSpan(studs);
+}
 
 /** Body size of an n-stud run: n x 8 mm minus 0.1 mm clearance on each side. */
 export function legoSpan(studs: number): number {

@@ -8,7 +8,10 @@ export type Vec3 = [number, number, number];
 export type PartSpec =
   | { kind: "legoBrick"; studsX: number; studsZ: number; plates: number; color: string }
   | { kind: "legoRoundBrick"; color: string } // 2x2 round brick with axle hole
-  | { kind: "legoRoundPlate"; studs: number; color: string; hole?: boolean }
+  | { kind: "legoRoundPlate"; studs: number; color: string; hole?: boolean; axleHole?: boolean; tile?: boolean } // tile: smooth top
+  | { kind: "legoAxle"; length: number; color: string } // Technic axle, length in studs, along +y from its bottom end
+  | { kind: "legoAxleConnector"; color: string } // 2L smooth axle connector, along +y
+  | { kind: "assembly"; parts: { spec: PartSpec; y: number; rotY?: number }[] } // a built sub-assembly, stacked along +y
   | { kind: "legoHalfRound"; studs: number; color: string } // half of an n x n round plate (z <= 0)
   | { kind: "legoSlope45"; color: string } // 2x2 45° slope, descending towards +z
   | { kind: "legoBarPlate"; color: string } // 2x2 round plate with four upright bars
@@ -52,6 +55,9 @@ export type Placement = {
   spawn?: Vec3; // where the held part first appears (default: beside the target)
   label?: string; // spot label shown in the scene ("A2")
   focus?: { target: Vec3; distance: number }; // where the camera eases to for this placement
+  tilt?: Vec3; // fixed orientation (Euler XYZ, radians) applied before rotY: parts built lying on their side
+  lockRotation?: boolean; // Rotate does nothing (e.g. parts sliding onto an axle)
+  consumes?: string[]; // placements that become part of this one: hidden once it's picked up or placed
 };
 
 export type Pack = {

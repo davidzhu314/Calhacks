@@ -216,9 +216,10 @@ export default function PracticeView({ packId }: { packId: PackId }) {
   );
 
   const rotate = useCallback(() => {
+    if (p?.lockRotation) return;
     setHeld((h) => (h ? { ...h, rotY: h.rotY + pack.rotateStep } : h));
     sfx("pick");
-  }, [pack.rotateStep]);
+  }, [pack.rotateStep, p?.lockRotation]);
 
   const back = useCallback(() => {
     if (placed === 0) return;
@@ -275,6 +276,7 @@ export default function PracticeView({ packId }: { packId: PackId }) {
           return "Showing you where it goes.";
         case "rotate":
           if (!held) return "Pick a part first.";
+          if (p?.lockRotation) return "This one only goes on one way, no turning needed.";
           rotate();
           return "Turned it.";
         case "restart":
@@ -442,7 +444,7 @@ export default function PracticeView({ packId }: { packId: PackId }) {
               )}
               <button
                 onClick={rotate}
-                disabled={!held}
+                disabled={!held || !!p.lockRotation}
                 className="hud-panel flex h-14 shrink-0 items-center gap-2 rounded-full pl-4 pr-5 text-sm font-semibold text-white transition active:scale-95 disabled:opacity-35"
               >
                 <Svg d={Icon.rotate} className="h-5 w-5 text-holo" />

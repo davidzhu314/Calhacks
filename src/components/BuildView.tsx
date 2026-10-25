@@ -764,6 +764,31 @@ export default function BuildView() {
   }, [reader, doc, ready, isPhone]);
 
   // Opens a tile's step: on this page at once, otherwise opens its page at that step.
+  // Goes straight to a step on a page that's already read: no loading card in between (that flash, and the
+  // step strip re-centering from scratch after it, made jumping feel jumpy). False if the page isn't read yet.
+  const openReadPage = useCallback(
+    (toPage: number, pick: (steps: ExtractedStep[]) => number): boolean => {
+      const known = reader?.pages().find((pg) => pg.page === toPage);
+      if (!known) return false;
+      const idx = Math.max(0, Math.min(pick(known.steps), known.steps.length - 1));
+      const id = search.current;
+      landIdx.current = idx; // the page effect re-runs for the new page and lands on the same step
+      direction.current = 1;
+      known
+        .image()
+        .then((image) => {
+          if (search.current !== id) return; // another jump started meanwhile
+          setPageImage(image);
+          setSteps(known.steps);
+          setStepIdx(idx);
+          setPage(toPage);
+        })
+        .catch(() => turnTo(toPage));
+      return true;
+    },
+    [reader, turnTo],
+  );
+
   const openTile = useCallback(
     (t: Tile) => {
       search.current++; // cancel any running "go to step" search
@@ -772,11 +797,12 @@ export default function BuildView() {
         const idx = steps.findIndex((s) => s.number === t.number);
         if (idx >= 0) return setStepIdx(idx);
       }
+      if (openReadPage(t.page, (found) => found.findIndex((s) => s.number === t.number))) return;
       landOn.current = t.number;
       direction.current = 1;
       turnTo(t.page);
     },
-    [page, steps, turnTo],
+    [page, steps, turnTo, openReadPage],
   );
 
   // Step strip: every step read so far as a small thumbnail, in a sideways scroll inside the step card. Tap one to
@@ -819,17 +845,21 @@ export default function BuildView() {
       search.current++; // cancel any running "go to step" search
       setCheckState(null);
       if (toPage === page) return setStepIdx(idx);
+      if (openReadPage(toPage, () => idx)) return;
       landIdx.current = idx;
       direction.current = 1;
       turnTo(toPage);
     },
-    [page, turnTo],
+    [page, turnTo, openReadPage],
   );
-  // Centers the current step in the strip whenever it appears or the step changes (the step card re-mounts after
-  // a page load). Keyed to the step, so swiping the strip doesn't get pulled back on every re-render.
+  // Centers the current step in the strip whenever it appears or the step changes. Keyed to the step, so swiping
+  // the strip doesn't get pulled back on every re-render. A strip that just appeared (still at the start) jumps
+  // straight there instead of sliding across every step.
   const centerCurrent = useCallback(
     (el: HTMLButtonElement | null) => {
-      if (el) requestAnimationFrame(() => el.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" }));
+      if (!el) return;
+      const fresh = (el.parentElement?.scrollLeft ?? 0) === 0;
+      requestAnimationFrame(() => el.scrollIntoView({ inline: "center", block: "nearest", behavior: fresh ? "auto" : "smooth" }));
     },
     [stepKey], // eslint-disable-line react-hooks/exhaustive-deps -- a new callback per step re-runs it
   );
@@ -1211,7 +1241,7 @@ export default function BuildView() {
 
         <AnimatePresence mode="wait">
           <motion.section
-            key={phase.kind === "ready" ? `step-${page}-${stepIdx}` : phase.kind}
+            key={phase.kind} // one card for all steps: a step change updates it in place instead of fading it out and in
             initial={{ opacity: 0, y: 24, filter: "blur(6px)" }}
             animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
             exit={{ opacity: 0, y: -12, filter: "blur(6px)" }}
@@ -1367,7 +1397,16 @@ export default function BuildView() {
                     {locating ? "Checking where you are…" : `${stepIdx + 1}/${steps.length} on page ${page}`}
                   </p>
                 </div>
-                <h1 className="mt-0.5 text-[17px] font-semibold leading-snug sm:text-2xl">{step.instruction}</h1>
+                {/* the card stays put between steps; just the new instruction fades in */}
+                <motion.h1
+                  key={stepKey}
+                  initial={{ opacity: 0.3 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.2 }}
+                  className="mt-0.5 text-[17px] font-semibold leading-snug sm:text-2xl"
+                >
+                  {step.instruction}
+                </motion.h1>
 
                 {step.watchFor[0] && !roomForResult && (
                   <p className="mt-2 flex gap-2 text-xs text-amber-200/90">

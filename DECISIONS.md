@@ -175,3 +175,8 @@ Reading a not-pre-read manual in the background made phones stutter for the whol
 - Phones (coarse pointer) drop the frosted-glass blur on panels: over live video it's redone every frame, a GPU cost the test browser can't measure. Panels are a dark see-through fill instead.
 - The camera asks for 1280x720 instead of 1920x1080 (photos for Claude are at most 896 px).
 After: about 53 fps through the read, blocked time mostly 0.
+## Jumping between steps doesn't flash the card
+The step card used to be keyed to the step, so every step change faded the whole card out and a new one in, and the step strip inside it was rebuilt and slid across from step 1 to re-center. Jumping to a step on another page also showed the loading card first, even for pages already read.
+- One card for all steps (keyed to the phase only); a step change updates it in place and just fades in the new instruction.
+- Jumps from the strip or from automatic step detection to a page that's already read go straight there, no loading card.
+- A strip that has just appeared jumps to the current step instead of sliding there.

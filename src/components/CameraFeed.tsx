@@ -2,11 +2,16 @@
 
 // Full-screen camera background. Prefers the rear camera on phones.
 // Exposes a capture() that returns a resized JPEG data URL for the model, and a sample() that returns a
-// tiny grayscale frame for cheap motion sensing on the phone (no network).
+// tiny grayscale frame for cheap motion sensing on the phone (no network). size() is the camera's own frame size,
+// which capture() keeps (just scaled), so boxes in a captured photo can be mapped back onto the live video.
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 
-export type CameraHandle = { capture: () => string | null; sample: () => Uint8ClampedArray | null };
+export type CameraHandle = {
+  capture: () => string | null;
+  sample: () => Uint8ClampedArray | null;
+  size: () => { w: number; h: number } | null;
+};
 
 const MAX_SIDE = 896; // enough detail for bricks, small enough to upload fast on venue Wi-Fi
 const SAMPLE_W = 32;
@@ -38,7 +43,8 @@ const CameraFeed = forwardRef<CameraHandle, { onStatusChange?: (status: CameraSt
       }
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+          // 1280x720 is plenty: photos for Claude are at most 896 px, and a 1080p stream costs phones more to decode and draw
+          video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
           audio: false,
         });
         if (cancelled) return stream.getTracks().forEach((t) => t.stop());
@@ -66,6 +72,10 @@ const CameraFeed = forwardRef<CameraHandle, { onStatusChange?: (status: CameraSt
       canvas.height = Math.round(v.videoHeight * scale);
       canvas.getContext("2d")?.drawImage(v, 0, 0, canvas.width, canvas.height);
       return canvas.toDataURL("image/jpeg", 0.7);
+    },
+    size() {
+      const v = video.current;
+      return v && v.videoWidth ? { w: v.videoWidth, h: v.videoHeight } : null;
     },
     sample() {
       const v = video.current;

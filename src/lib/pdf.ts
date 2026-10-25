@@ -4,6 +4,7 @@
 
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { getPdfBytes, type Manual } from "@/lib/manuals";
+import { encodeCanvas } from "@/lib/encode";
 
 let pdfjs: typeof import("pdfjs-dist") | null = null;
 
@@ -48,5 +49,5 @@ export async function renderPage(doc: PDFDocumentProxy, pageNo: number, maxWidth
   canvas.width = Math.round(viewport.width);
   canvas.height = Math.round(viewport.height);
   await page.render({ canvas, viewport }).promise;
-  return canvas.toDataURL("image/jpeg", quality);
+  return encodeCanvas(canvas, "image/jpeg", quality);
 }

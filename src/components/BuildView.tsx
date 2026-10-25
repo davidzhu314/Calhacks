@@ -7,6 +7,8 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { CheckResult } from "@/app/api/check/route";
+import CheckErrorOverlay, { IssueBoxes, LiveIssueBoxes, WarnGlyph } from "@/components/CheckErrorOverlay";
+import { CATEGORY_TAG, checkVerdict, forStep, issueCategory, issueLabel, photoLabel, spokenIssues } from "@/lib/issueBox";
 import type { ExtractedStep } from "@/app/api/extract/route";
 import type { LocateResult } from "@/app/api/locate/route";
 import type { PartMark } from "@/components/HighlightBox";
@@ -24,10 +26,37 @@ import { loadPrebuilt, type Prebuilt } from "@/lib/prebuilt";
 import { speak, speaker, stopSpeaking } from "@/lib/speech";
 import { AUTO_MIN_CONFIDENCE, changed, decide, MAX_TILES, whereAmI, type Tile } from "@/lib/whereAmI";
 import { adjacentLocation, clampStepIdx, createLatestGuard, listPrebuiltSteps, type StepLocation } from "@/lib/stepBrowser";
+import { encodeCanvas } from "@/lib/encode";
 
 
 type Phase = { kind: "loading"; label: string } | { kind: "ready" } | { kind: "error"; message: string } | { kind: "done" };
-type Check = { state: "checking" } | { state: "result"; result: CheckResult; frame: string } | { state: "error"; message: string };
+type Check = { state: "checking" } | { state: "result"; result: CheckResult; frame: string; id: number; sample: Uint8ClampedArray | null } | { state: "error"; message: string };
+
+// Every step picture on one page, cut out and scaled to THUMB_H px tall, decoding the page only once.
+// Shared by the step strip and "where am I?" (see thumbsFor), so each picture is cut once per session.
+const THUMB_H = 160;
+async function stepThumbs(pageImage: string, boxes: ExtractedStep["box"][], pad = 0.02): Promise<string[]> {
+  const img = new Image();
+  img.src = pageImage;
+  await img.decode();
+  const out: string[] = [];
+  for (const box of boxes) {
+    const x = Math.max(0, box.x - pad) * img.width;
+    const y = Math.max(0, box.y - pad) * img.height;
+    const w = Math.min(Math.min(1, box.w + 2 * pad) * img.width, img.width - x);
+    const h = Math.min(Math.min(1, box.h + 2 * pad) * img.height, img.height - y);
+    const scale = Math.min(1, THUMB_H / h);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(w * scale));
+    canvas.height = Math.max(1, Math.round(h * scale));
+    canvas.getContext("2d")?.drawImage(img, x, y, w, h, 0, 0, canvas.width, canvas.height);
+    out.push(await encodeCanvas(canvas, "image/jpeg", 0.8));
+  }
+  return out;
+}
+
+// Lets the phone draw a frame between chunks of picture work, so the screen never freezes.
+const breathe = () => new Promise((r) => setTimeout(r, 0));
 
 // Cuts a step's picture out of the rendered page (box is 0–1 of the page), with a little padding.
 async function crop(pageImage: string, box: ExtractedStep["box"], pad = 0.02): Promise<string> {
@@ -42,7 +71,7 @@ async function crop(pageImage: string, box: ExtractedStep["box"], pad = 0.02): P
   canvas.width = Math.min(w, img.width - x);
   canvas.height = Math.min(h, img.height - y);
   canvas.getContext("2d")?.drawImage(img, x, y, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", 0.75);
+  return encodeCanvas(canvas, "image/jpeg", 0.75);
 }
 
 // Draws a light percentage grid on an image. Claude places boxes far more accurately with it.
@@ -72,7 +101,7 @@ async function withGrid(src: string): Promise<string> {
     g.fillText(String(i * 10), x + 2, 11);
     g.fillText(String(i * 10), 2, y - 2);
   }
-  return canvas.toDataURL("image/jpeg", 0.75);
+  return encodeCanvas(canvas, "image/jpeg", 0.75);
 }
 
 // "Step 8" or, for a panel inside a step, "Step 8 · 2 of 4".
@@ -203,8 +232,11 @@ function pageReader(manualId: string, source: PageSource) {
 export default function BuildView() {
   const { id } = useParams<{ id: string }>();
   const camera = useRef<CameraHandle>(null);
+  // What the live mistake boxes need from the camera (read when called, not during render).
+  const liveCamera = useMemo(() => ({ size: () => camera.current?.size() ?? null, sample: () => camera.current?.sample() ?? null }), []);
   const direction = useRef<1 | -1>(1);
   const landOn = useRef<number | null>(null); // step number the next page load opens at ("go to step 8")
+  const landIdx = useRef<number | null>(null); // exact step index the next page load opens at (step strip)
   const search = useRef(0); // bumped to cancel a running "go to step" search
   const pendingStepIdx = useRef<StepLocation | null>(null);
   const advanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -224,7 +256,13 @@ export default function BuildView() {
   const [target, setTarget] = useState<string | null>(null);
   const [targetKey, setTargetKey] = useState<string | null>(null); // which step `target` was cut for
   const [previous, setPrevious] = useState<string | null>(null);
-  const [check, setCheck] = useState<Check | null>(null);
+  // A check belongs to the step it ran on (its key); on any other step it isn't shown.
+  const [checkState, setCheckState] = useState<(Check & { key: string }) | null>(null);
+  const [issuePick, setIssuePick] = useState<number | null>(null); // problem tapped in the list: its box is brightened
+  const [showBoxes, setShowBoxes] = useState(true);
+  // The checked photo is open full screen while this holds that check's id; a new check (new id), a step change
+  // (the check hides) or Close all end it without extra bookkeeping.
+  const [photoFor, setPhotoFor] = useState<number | null>(null);
   const [muted, setMuted] = useState(false);
   const [cameraStatus, setCameraStatus] = useState<{ state: "starting" | "ready" | "error"; message?: string }>({ state: "starting" });
   const [showManual, setShowManual] = useState(false); // true = blue "hologram" tint; default is the real colors
@@ -235,6 +273,10 @@ export default function BuildView() {
   const compact = isPhone && !sheetOpen;
 
   const stepKey = `${page}-${stepIdx}`;
+  const check = forStep(checkState, stepKey);
+  const setCheck = useCallback((c: Check | null) => setCheckState(c && { ...c, key: stepKey }), [stepKey]);
+  const verdict = check?.state === "result" ? checkVerdict(check.result) : null;
+  const photoOpen = check?.state === "result" && verdict === "fix" && photoFor === check.id;
   // Where each part sits in the manual picture, found once per part (see locatePart).
   const located = useRef(new Map<string, Promise<LocateResult | null>>());
   const [attempt, setAttempt] = useState(0); // bumped by Retry to re-read the page
@@ -274,7 +316,7 @@ export default function BuildView() {
   // Every page change shows the loading card first.
   const turnTo = useCallback((p: number) => {
     setPhase({ kind: "loading", label: `Reading page ${p}` });
-    setCheck(null);
+    setCheckState(null);
     setPage(p);
   }, []);
 
@@ -413,11 +455,13 @@ export default function BuildView() {
         }
         setPageImage(image);
         setSteps(found);
-        const land = landOn.current == null ? -1 : found.findIndex((s) => s.number === landOn.current);
+        const land =
+          landIdx.current != null ? Math.min(landIdx.current, found.length - 1) : landOn.current == null ? -1 : found.findIndex((s) => s.number === landOn.current);
         landOn.current = null;
         const pending = pendingStepIdx.current?.page === page ? pendingStepIdx.current : null;
         setStepIdx(pending ? clampStepIdx(pending.stepIdx, found.length) : land >= 0 ? land : direction.current === 1 ? 0 : found.length - 1);
         pendingStepIdx.current = null;
+        landIdx.current = null;
         setPhase({ kind: "ready" });
       })
       .catch((e) => {
@@ -555,7 +599,7 @@ export default function BuildView() {
     if (!doc || location.page < 1 || location.page > doc.numPages) return;
     cancelAdvance();
     checkRequest.current++;
-    setCheck(null);
+    setCheckState(null);
     direction.current = 1;
     if (location.page === page && phase.kind === "ready" && steps.length > 0) {
       pendingStepIdx.current = null;
@@ -581,7 +625,7 @@ export default function BuildView() {
       cancelAdvance();
       checkRequest.current++;
       pendingStepIdx.current = null;
-      setCheck(null);
+      setCheckState(null);
       direction.current = delta;
       const nextIdx = stepIdx + delta;
       if (nextIdx >= 0 && nextIdx < steps.length) return setStepIdx(nextIdx);
@@ -596,9 +640,12 @@ export default function BuildView() {
   const runCheck = useCallback(async () => {
     if (!step || !target || check?.state === "checking" || browserOpenRef.current) return;
     const frame = camera.current?.capture();
+    const sample = camera.current?.sample() ?? null; // the view at check time, to tell if the camera moves after
     if (!frame) return setCheck({ state: "error", message: "Camera isn't ready yet." });
+    cancelAdvance();
     const request = ++checkRequest.current;
     setCheck({ state: "checking" });
+    setIssuePick(null);
     try {
       const res = await fetch("/api/check", {
         method: "POST",
@@ -609,8 +656,9 @@ export default function BuildView() {
       if (request !== checkRequest.current || browserOpenRef.current) return;
       if (!res.ok) throw new Error(data.error);
       const result = data as CheckResult;
-      setCheck({ state: "result", result, frame });
-      if (!muted && result.say) speak(result.say);
+      setCheck({ state: "result", result, frame, id: request, sample });
+      const spoken = checkVerdict(result) === "fix" ? spokenIssues(result.issues) : result.say;
+      if (!muted && spoken) speak(spoken);
       if (result.step_complete && result.confidence >= 0.7) {
         cancelAdvance();
         advanceTimer.current = setTimeout(() => {
@@ -622,7 +670,7 @@ export default function BuildView() {
       if (request !== checkRequest.current || browserOpenRef.current) return;
       setCheck({ state: "error", message: e instanceof Error && e.message ? e.message : "Check failed." });
     }
-  }, [step, target, previous, check?.state, muted, go, cancelAdvance]);
+  }, [step, target, previous, check?.state, muted, go, cancelAdvance, setCheck]);
 
   const speakStep = useCallback(() => {
     if (step && !muted) speak(spokenStep(step));
@@ -636,7 +684,7 @@ export default function BuildView() {
       const here = phase.kind === "ready" ? steps.findIndex((s) => s.number === n) : -1;
       if (here >= 0) {
         search.current++;
-        setCheck(null);
+        setCheckState(null);
         if (here === stepIdx) speakStep();
         else setStepIdx(here);
         return;
@@ -647,7 +695,7 @@ export default function BuildView() {
       for (let k = 1; k <= reach && page + k <= doc.numPages; k++) order.push(page + k);
       for (let k = 1; k <= reach && page - k >= 1; k++) order.push(page - k);
       const wasPhase = phase;
-      setCheck(null);
+      setCheckState(null);
       setPhase({ kind: "loading", label: `Finding step ${n}` });
       for (let i = 0; i < order.length; i++) {
         order.slice(i + 1, i + 3).forEach((p) => reader(p)); // read the next couple of pages meanwhile
@@ -668,35 +716,45 @@ export default function BuildView() {
       setCheck({ state: "error", message });
       if (!muted) speak(message);
     },
-    [doc, reader, phase, steps, stepIdx, page, muted, speakStep],
+    [doc, reader, phase, steps, stepIdx, page, muted, speakStep, setCheck],
   );
 
   // Once a step is up, read the rest of the book in the background, two pages at a time (so the page in view
   // never waits), so "where am I?" can compare against every step. Pre-read manuals are instant.
+  // Phones read one page at a time with a short rest between pages, and the screen re-lists the read pages at
+  // most every 2 s: rendering and re-rendering for every page made the whole app stutter while a book was read.
   const ready = phase.kind === "ready";
   useEffect(() => {
     if (!reader || !doc || !ready) return;
     let stopped = false;
     let next = 1;
+    let shown = 0;
+    const show = () => {
+      if (stopped) return;
+      shown = Date.now();
+      setReadCount(reader.count());
+    };
     const lane = async () => {
       while (!stopped && next <= doc.numPages) {
         const p = next++;
         await reader(p).steps.catch(() => {});
-        if (!stopped) setReadCount(reader.count());
+        if (Date.now() - shown > 2000) show();
+        if (isPhone) await new Promise((r) => setTimeout(r, 250));
       }
+      show();
     };
     lane();
-    lane();
+    if (!isPhone) lane();
     return () => {
       stopped = true;
     };
-  }, [reader, doc, ready]);
+  }, [reader, doc, ready, isPhone]);
 
   // Opens a tile's step: on this page at once, otherwise opens its page at that step.
   const openTile = useCallback(
     (t: Tile) => {
       search.current++; // cancel any running "go to step" search
-      setCheck(null);
+      setCheckState(null);
       if (t.page === page) {
         const idx = steps.findIndex((s) => s.number === t.number);
         if (idx >= 0) return setStepIdx(idx);
@@ -706,6 +764,61 @@ export default function BuildView() {
       turnTo(t.page);
     },
     [page, steps, turnTo],
+  );
+
+  // Step strip: every step read so far as a small thumbnail, in a sideways scroll inside the step card. Tap one to
+  // jump straight there. Fills in as the book is read in the background.
+  const stripItems = useMemo(
+    () => (reader ? reader.pages().flatMap((pg) => pg.steps.map((st, idx) => ({ page: pg.page, idx, step: st, image: pg.image }))) : []),
+    [reader, readCount], // eslint-disable-line react-hooks/exhaustive-deps -- re-list whenever more pages are read
+  );
+  // Step pictures, cut once per page and kept (the strip shows them, "where am I?" sends them to Claude).
+  const pageThumbs = useRef(new Map<number, { steps: ExtractedStep[]; job: Promise<string[]> }>());
+  const thumbsFor = useCallback((pg: { page: number; steps: ExtractedStep[]; image: () => Promise<string> }) => {
+    const have = pageThumbs.current.get(pg.page);
+    if (have && have.steps === pg.steps) return have.job;
+    const job = pg
+      .image()
+      .then((image) => stepThumbs(image, pg.steps.map((st) => st.box)))
+      .catch(() => pg.steps.map(() => ""));
+    pageThumbs.current.set(pg.page, { steps: pg.steps, job });
+    return job;
+  }, []);
+  const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!reader) return;
+    let cancelled = false;
+    (async () => {
+      for (const pg of reader.pages()) {
+        if (pg.steps.every((_, idx) => thumbs[`${pg.page}-${idx}`] !== undefined)) continue;
+        const urls = await thumbsFor(pg);
+        if (cancelled) return;
+        setThumbs((t) => ({ ...t, ...Object.fromEntries(urls.map((u, idx) => [`${pg.page}-${idx}`, u])) }));
+        await breathe();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [stripItems]); // eslint-disable-line react-hooks/exhaustive-deps -- runs when more pages are read; `thumbs` only skips finished pages
+  const jumpToStep = useCallback(
+    (toPage: number, idx: number) => {
+      search.current++; // cancel any running "go to step" search
+      setCheckState(null);
+      if (toPage === page) return setStepIdx(idx);
+      landIdx.current = idx;
+      direction.current = 1;
+      turnTo(toPage);
+    },
+    [page, turnTo],
+  );
+  // Centers the current step in the strip whenever it appears or the step changes (the step card re-mounts after
+  // a page load). Keyed to the step, so swiping the strip doesn't get pulled back on every re-render.
+  const centerCurrent = useCallback(
+    (el: HTMLButtonElement | null) => {
+      if (el) requestAnimationFrame(() => el.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" }));
+    },
+    [stepKey], // eslint-disable-line react-hooks/exhaustive-deps -- a new callback per step re-runs it
   );
 
   // "Where am I?": compares the camera with every step picture read so far. Jumps to the next step, or back to
@@ -724,12 +837,13 @@ export default function BuildView() {
       setLocating(true);
       if (!automatic) setNotice({ text: "Finding your place…" });
       try {
+        // The same step pictures the strip shows: already cut, so this is nearly free after the first time.
         const tiles: Tile[] = [];
         for (const pg of pages) {
-          const image = await pg.image();
-          for (const s of pg.steps) {
+          const urls = await thumbsFor(pg);
+          for (const [idx, st] of pg.steps.entries()) {
             if (tiles.length >= MAX_TILES) break;
-            tiles.push({ tile: tiles.length + 1, page: pg.page, number: s.number, image: await crop(image, s.box) });
+            tiles.push({ tile: tiles.length + 1, page: pg.page, number: st.number, image: urls[idx] });
           }
         }
         const complete = reader.count() >= doc.numPages;
@@ -748,7 +862,7 @@ export default function BuildView() {
         setLocating(false);
       }
     },
-    [reader, doc, locating, muted, step, page, openTile],
+    [reader, doc, locating, muted, step, page, openTile, thumbsFor],
   );
 
   // Step changes the builder made (Next, Back, voice, tapping) hold off automatic jumps for a while.
@@ -763,7 +877,9 @@ export default function BuildView() {
   // 1.5 s (hands out of the way). At most every 20 s, and not within 20 s of the builder changing step.
   const autoState = useRef<{ ready: boolean; busy: boolean; findMyPlace: (automatic?: boolean) => void }>({ ready: false, busy: false, findMyPlace: () => {} });
   useEffect(() => {
-    autoState.current = { ready, busy: locating || check?.state === "checking", findMyPlace };
+    // A mistake on screen pauses it too, so it doesn't jump away while the builder is fixing it.
+    const reviewing = check?.state === "result" && check.result.issues.length > 0;
+    autoState.current = { ready, busy: locating || check?.state === "checking" || reviewing, findMyPlace };
   });
   useEffect(() => {
     if (!reader || !doc) return;
@@ -845,7 +961,7 @@ export default function BuildView() {
         }
         return;
       }
-      if (zoomOpen) return; // the zoom viewer handles its own keys
+      if (zoomOpen || photoOpen) return; // the zoom viewer handles its own keys
       if (e.target instanceof HTMLElement && e.target.closest("button, a, input, select, textarea")) return;
       if (e.key === "ArrowRight") go(1);
       if (e.key === "ArrowLeft") go(-1);
@@ -856,23 +972,20 @@ export default function BuildView() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [go, runCheck, zoomOpen, closeStepBrowser]);
+  }, [go, runCheck, zoomOpen, photoOpen, closeStepBrowser]);
 
   // Phones are short: while a check result shows, the step card drops the extras (holograms, chips, tip) to make room.
   const roomForResult = isPhone && check != null && check.state !== "checking";
 
-  const verdict = useMemo(() => {
-    if (check?.state !== "result") return null;
-    const { result } = check;
-    if (!result.can_see || result.confidence < 0.5) return "unsure" as const;
-    if (result.issues.length > 0) return "fix" as const;
-    return result.step_complete ? ("pass" as const) : ("notyet" as const);
-  }, [check]);
 
   return (
     <main className="relative h-dvh w-full overflow-hidden bg-ink text-white">
       <CameraFeed ref={camera} onStatusChange={setCameraStatus} />
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-ink/70 via-transparent to-ink/80" />
+      {/* the mistake boxes on the live camera too, while the camera stays where it was for the check */}
+      {check?.state === "result" && verdict === "fix" && showBoxes && (
+        <LiveIssueBoxes issues={check.result.issues} selected={issuePick} baseline={check.sample} camera={liveCamera} />
+      )}
 
       {/* top bar */}
       <header className="absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-3 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6">
@@ -963,6 +1076,22 @@ export default function BuildView() {
         )}
       </AnimatePresence>
 
+      {/* full-screen checked photo with the mistake boxes (same viewer, photo mode) */}
+      <AnimatePresence>
+        {photoOpen && check?.state === "result" && (
+          <ZoomViewer
+            key="photo"
+            target={check.frame}
+            pageImage={null}
+            stepNumber={step && stepLabel(step).replace(/^Step /, "")}
+            glow={false}
+            onGlowChange={() => {}}
+            photo={{ label: photoLabel(check.result.issues), overlay: showBoxes && <IssueBoxes issues={check.result.issues} selected={issuePick} /> }}
+            onClose={() => setPhotoFor(null)}
+          />
+        )}
+      </AnimatePresence>
+
       {/* voice: talk to BuildSight (top-left on phones, bottom-right on desktop) */}
       <div className={`absolute left-3 right-[10.5rem] top-20 z-20 sm:left-auto sm:right-6 sm:top-auto sm:bottom-6 sm:w-80`}>
         <VoicePanel
@@ -1012,18 +1141,28 @@ export default function BuildView() {
                   const h = holoItems?.[i];
                   if (holoItems && !h?.cut) return null; // couldn't cut this one out of the manual
                   const many = step.parts.length > 1;
-                  const lots = step.parts.length > 2;
+                  const lots = step.parts.length > 2; // one part is as small as two, so the row never dominates the screen
                   return (
                     <div
                       key={`${stepKey}-${i}`}
                       aria-label={`${p.name}, ${p.qty} needed`}
-                      className={`relative shrink-0 ${lots ? "h-20 w-20 sm:h-28 sm:w-28" : many ? "h-24 w-24 sm:h-32 sm:w-32" : "h-36 w-36 sm:h-48 sm:w-48"}`}
+                      className={`relative shrink-0 ${lots ? "h-20 w-20 sm:h-28 sm:w-28" : "h-24 w-24 sm:h-32 sm:w-32"}`}
                     >
                       <PieceHologram state={h?.cut ? "ready" : "scanning"} cutout={h?.cut} size={h?.size} pieceKey={`${stepKey}-${i}`} />
+                      {h?.cut && (
+                        // How many to grab: big and bold, amber when it's more than one so it isn't missed.
+                        <span
+                          aria-hidden
+                          className={`absolute right-0 top-0 rounded-lg px-2 py-0.5 text-base font-extrabold leading-tight shadow-[0_2px_10px_rgba(0,0,0,0.5)] ${
+                            p.qty > 1 ? "bg-amber-300 text-ink" : "bg-white text-ink"
+                          }`}
+                        >
+                          ×{p.qty}
+                        </span>
+                      )}
                       {h?.cut && check?.state !== "checking" && (
                         <span className="absolute -bottom-3 left-1/2 flex max-w-full -translate-x-1/2 items-center gap-1 whitespace-nowrap text-[11px] font-medium text-sky-200/80">
-                          {many && <span className="rounded bg-sky-300 px-1 text-[9px] font-bold leading-[14px] text-ink">{i + 1}</span>}
-                          <span className="truncate">{many ? `×${p.qty}` : "Next part"}</span>
+                          {many ? <span className="rounded bg-sky-300 px-1 text-[9px] font-bold leading-[14px] text-ink">{i + 1}</span> : <span>Next part</span>}
                         </span>
                       )}
                     </div>
@@ -1050,7 +1189,7 @@ export default function BuildView() {
               if (info.offset.y > 50 || info.velocity.y > 400) setSheetOpen(false);
               else if (info.offset.y < -50 || info.velocity.y < -400) setSheetOpen(true);
             }}
-            className={`hud-panel holo-glow rounded-3xl touch-none sm:touch-auto ${compact ? "px-4 pb-3 pt-2" : "p-5 pt-3 sm:pt-5"}`}
+            className={`hud-panel holo-glow rounded-3xl touch-none sm:touch-auto ${compact ? "px-4 pb-3 pt-2" : "px-4 pb-4 pt-2 sm:p-5"}`}
           >
             {isPhone && (
               <button
@@ -1081,7 +1220,7 @@ export default function BuildView() {
                   <p className="text-[11px] font-semibold text-sky-300">
                     {stepLabel(step)}
                     {check?.state === "result" && (
-                      <span className={verdict === "pass" ? "text-emerald-300" : verdict === "fix" ? "text-amber-300" : "text-white/50"}>
+                      <span className={verdict === "pass" ? "text-emerald-300" : verdict === "fix" ? "text-red-300" : "text-white/50"}>
                         {" "}· {{ pass: "Verified", fix: "Hold on", notyet: "Not done yet", unsure: "Need a better look" }[verdict ?? "unsure"]}
                       </span>
                     )}
@@ -1094,9 +1233,6 @@ export default function BuildView() {
                   className="shrink-0 rounded-xl bg-gradient-to-b from-sky-300 to-sky-500 px-4 py-2.5 text-sm font-semibold text-ink disabled:opacity-60"
                 >
                   {check?.state === "checking" ? "…" : "Check"}
-                </button>
-                <button onClick={() => go(1)} aria-label="Next step" className="shrink-0 rounded-xl border border-white/15 bg-white/[0.06] px-3 py-2.5 text-sm">
-                  →
                 </button>
               </div>
             )}
@@ -1158,18 +1294,49 @@ export default function BuildView() {
 
             {phase.kind === "ready" && step && !compact && (
               <>
+                {stripItems.length > 1 && (
+                  <div
+                    aria-label="All steps"
+                    className="-mx-2 mb-2 flex snap-x gap-1.5 overflow-x-auto px-2 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                  >
+                    {stripItems.map((item) => {
+                      const key = `${item.page}-${item.idx}`;
+                      const current = item.page === page && item.idx === stepIdx;
+                      const thumb = thumbs[key];
+                      return (
+                        <button
+                          key={key}
+                          ref={current ? centerCurrent : undefined}
+                          onClick={() => jumpToStep(item.page, item.idx)}
+                          aria-current={current ? "step" : undefined}
+                          aria-label={`Go to step ${item.step.number}${item.step.sub ? `, part ${item.step.sub}` : ""}`}
+                          className={`relative h-10 w-14 shrink-0 snap-center overflow-hidden rounded-lg bg-white transition ${
+                            current ? "ring-2 ring-sky-300 ring-offset-2 ring-offset-ink" : "opacity-60 hover:opacity-100"
+                          }`}
+                        >
+                          {thumb ? <img src={thumb} alt="" className="h-full w-full object-contain" /> : <span className="absolute inset-0 animate-pulse bg-white/80" />}
+                          <span className={`absolute left-0 top-0 rounded-br px-1 text-[9px] font-bold leading-[13px] ${current ? "bg-sky-300 text-ink" : "bg-ink/80 text-white"}`}>
+                            {item.step.number}
+                            {item.step.sub ? `·${item.step.sub.split("/")[0]}` : ""}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
                 <div className="flex items-baseline justify-between">
                   <p className="text-xs font-semibold text-sky-300">{stepLabel(step)}</p>
-                  <p className="text-[11px] text-white/40">
-                    {stepIdx + 1}/{steps.length} on page {page}
+                  {/* the step is found from the camera automatically; while a check runs it says so here */}
+                  <p className={`text-[11px] ${locating ? "text-sky-300/80" : "text-white/40"}`} aria-live="polite">
+                    {locating ? "Checking where you are…" : `${stepIdx + 1}/${steps.length} on page ${page}`}
                   </p>
                 </div>
-                <h1 className="mt-1 text-xl font-semibold leading-snug sm:text-2xl">{step.instruction}</h1>
+                <h1 className="mt-0.5 text-[17px] font-semibold leading-snug sm:text-2xl">{step.instruction}</h1>
 
                 {step.watchFor[0] && !roomForResult && (
-                  <p className="mt-3 flex gap-2 text-xs text-amber-200/90">
+                  <p className="mt-2 flex gap-2 text-xs text-amber-200/90">
                     <span className="font-mono">⚠</span>
-                    {step.watchFor[0]}
+                    <span className="line-clamp-2">{step.watchFor[0]}</span>
                   </p>
                 )}
 
@@ -1179,14 +1346,15 @@ export default function BuildView() {
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: "auto" }}
                       exit={{ opacity: 0, height: 0 }}
-                      onClick={() => setCheck(null)}
-                      title="Tap to dismiss"
-                      className={`mt-4 cursor-pointer overflow-hidden rounded-xl border p-3 text-sm ${
+                      // a mistake stays until Check again passes or Close; other results close on a tap
+                      onClick={verdict === "fix" ? undefined : () => setCheckState(null)}
+                      title={verdict === "fix" ? undefined : "Tap to dismiss"}
+                      className={`mt-4 overflow-hidden rounded-xl border p-3 text-sm ${verdict === "fix" ? "" : "cursor-pointer"} ${
                         check.state === "error" || verdict === "unsure" || verdict === "notyet"
                           ? "border-white/15 bg-white/5 text-white/80"
                           : verdict === "pass"
                             ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-100"
-                            : "border-amber-400/40 bg-amber-400/10 text-amber-100"
+                            : "border-red-400/50 bg-red-500/10 text-red-50"
                       }`}
                     >
                       {check.state === "error" ? (
@@ -1199,17 +1367,72 @@ export default function BuildView() {
                           </p>
                           <p className="mt-1">{check.result.say}</p>
                           {verdict === "fix" && check.result.issues.length > 0 && (
-                            // Phones: just your photo, small (the manual picture is already on screen). Desktop: side by side.
-                            <div className="mt-3 grid grid-cols-[auto] gap-2 sm:grid-cols-2">
-                              <figure className="hidden sm:block">
-                                <img src={target ?? ""} alt="Manual" className="max-h-40 w-full rounded-md bg-white object-contain" />
-                                <figcaption className="mt-1 text-[10px] text-white/50">Manual</figcaption>
-                              </figure>
-                              <figure>
-                                <img src={check.frame} alt="Your build" className="max-h-24 rounded-md object-cover sm:max-h-40 sm:w-full" />
-                                <figcaption className="mt-1 text-[10px] text-white/50">Your build</figcaption>
-                              </figure>
-                            </div>
+                            <>
+                              {/* Phones: just your photo with the boxes (the manual picture is already on screen). Desktop: side by side. */}
+                              <div className="mt-3 grid grid-cols-[auto] items-start gap-2 sm:grid-cols-2">
+                                <figure className="hidden sm:block">
+                                  <img src={target ?? ""} alt="Manual" className="max-h-56 w-full rounded-md bg-white object-contain" />
+                                  <figcaption className="mt-1 text-[10px] text-white/50">Manual</figcaption>
+                                </figure>
+                                <figure>
+                                  <CheckErrorOverlay
+                                    frame={check.frame}
+                                    issues={check.result.issues}
+                                    selected={issuePick}
+                                    show={showBoxes}
+                                    big={isPhone}
+                                    onOpen={() => setPhotoFor(check.id)}
+                                  />
+                                  <figcaption className="mt-1 text-[10px] text-white/50">Your build</figcaption>
+                                </figure>
+                              </div>
+                              {/* phones: a long list scrolls inside the card so the card never grows past the header */}
+                              <ol
+                                className={`mt-3 space-y-1.5 ${isPhone ? "max-h-[22dvh] touch-pan-y overflow-y-auto overscroll-contain" : ""}`}
+                                data-issue-list
+                              >
+                                {check.result.issues.map((issue, i) => (
+                                  <li key={i}>
+                                    <button
+                                      onClick={() => setIssuePick((p) => (p === i ? null : i))}
+                                      aria-label={issueLabel(issue, i + 1)}
+                                      aria-pressed={issuePick === i}
+                                      className={`flex w-full gap-2 rounded-lg px-2 py-1.5 text-left transition ${issuePick === i ? "bg-red-500/25" : "bg-black/20"}`}
+                                    >
+                                      <span className="mt-px flex h-[18px] min-w-[18px] items-center justify-center gap-0.5 rounded bg-red-500 px-1 text-[11px] font-bold leading-[18px] text-white">
+                                        <WarnGlyph />
+                                        {i + 1}
+                                      </span>
+                                      <span className="min-w-0">
+                                        <span className="mr-1.5 rounded border border-red-400/60 px-1 text-[10px] font-semibold uppercase tracking-wide text-red-200">
+                                          {CATEGORY_TAG[issueCategory(issue.kind)]}
+                                        </span>
+                                        <span className="font-semibold">{issue.part || "Piece"}</span>
+                                        {issue.problem && <span className="text-red-100/80">: {issue.problem}</span>}
+                                        {issue.fix && <span className="block text-white/85">{issue.fix}</span>}
+                                        {!issue.box && <span className="block text-[10px] text-white/45">Couldn&apos;t pin this one on the photo</span>}
+                                      </span>
+                                    </button>
+                                  </li>
+                                ))}
+                              </ol>
+                              <div className="mt-3 flex gap-2">
+                                <button
+                                  onClick={runCheck}
+                                  className="flex-1 rounded-lg bg-red-500 py-2 text-xs font-semibold text-white active:scale-[0.98]"
+                                >
+                                  Check again
+                                </button>
+                                {check.result.issues.some((i) => i.box) && (
+                                  <button onClick={() => setShowBoxes((v) => !v)} className="rounded-lg bg-white/10 px-3 py-2 text-xs font-medium">
+                                    {showBoxes ? "Hide boxes" : "Show boxes"}
+                                  </button>
+                                )}
+                                <button onClick={() => setCheckState(null)} className="rounded-lg bg-white/10 px-3 py-2 text-xs font-medium">
+                                  Close
+                                </button>
+                              </div>
+                            </>
                           )}
                         </>
                       )}
@@ -1217,26 +1440,15 @@ export default function BuildView() {
                   )}
                 </AnimatePresence>
 
-                {/* Show progress while matching the camera to a step. */}
-                <p className={`mt-3 h-4 text-xs text-sky-300/80 transition-opacity ${locating ? "opacity-100" : "opacity-0"}`} aria-live="polite">
-                  {locating ? "Checking where you are…" : ""}
-                </p>
-
-                <div className="mt-3 grid grid-cols-[1fr_1.4fr_1fr] gap-2">
-                  <button onClick={() => go(-1)} className="rounded-xl border border-white/15 bg-white/[0.06] py-3 text-sm font-medium text-white/80 transition hover:bg-white/10 active:scale-95">
-                    Back
-                  </button>
-                  <button
-                    onClick={runCheck}
-                    disabled={check?.state === "checking"}
-                    className="rounded-xl bg-gradient-to-b from-sky-300 to-sky-500 py-3 text-sm font-semibold text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_6px_20px_-6px_rgba(92,200,255,0.7)] transition hover:brightness-110 active:scale-95 disabled:opacity-60"
-                  >
-                    {check?.state === "checking" ? "Checking…" : "Check build"}
-                  </button>
-                  <button onClick={() => go(1)} className="rounded-xl border border-white/15 bg-white/[0.06] py-3 text-sm font-medium text-white transition hover:bg-white/10 active:scale-95">
-                    Next
-                  </button>
-                </div>
+                {/* Back / Next are gone: the step strip, voice ("next", "go to step 8") and auto-detect move between steps.
+                    Phones hide it during a mistake review: "Check again" does the same and the photo needs the room. */}
+                <button
+                  onClick={runCheck}
+                  disabled={check?.state === "checking"}
+                  className={`${isPhone && verdict === "fix" ? "hidden" : ""} mt-3 w-full rounded-xl bg-gradient-to-b from-sky-300 to-sky-500 py-2.5 text-sm font-semibold text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_6px_20px_-6px_rgba(92,200,255,0.7)] transition hover:brightness-110 active:scale-[0.98] disabled:opacity-60`}
+                >
+                  {check?.state === "checking" ? "Checking…" : "Check build"}
+                </button>
               </>
             )}
           </motion.section>

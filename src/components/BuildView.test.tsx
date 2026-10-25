@@ -63,6 +63,8 @@ beforeEach(() => {
     drawImage: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(), fillText: vi.fn(),
   } as unknown as CanvasRenderingContext2D);
   vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/jpeg;base64,cropped");
+  vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation((callback) => callback(null));
+  Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
   mocks.getManual.mockResolvedValue({ ...manual });
   mocks.saveManual.mockResolvedValue(undefined);
   mocks.getPageSteps.mockResolvedValue(null);
@@ -146,11 +148,11 @@ describe("BuildView step browser", () => {
     expect(mocks.getPageSteps.mock.calls.filter(([, page]) => page === 5).length).toBe(readsBefore);
   });
 
-  it("keeps ordinary Back and Next navigation working", async () => {
+  it("keeps direct step navigation working", async () => {
     await readyAt();
-    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Go to step 2" })[0]);
     await screen.findByRole("heading", { name: "Attach second piece." });
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Go to step 1" }));
     await screen.findByRole("heading", { name: "Build first piece." });
   });
 

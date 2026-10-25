@@ -12,6 +12,7 @@
 // with); each tile remembers its page and printed step number, since sub-builds restart at step 1.
 
 import type { BrokenTile, WhereAmIResult } from "@/app/api/where-am-i/route";
+import { encodeCanvas } from "@/lib/encode";
 
 export type Tile = { tile: number; page: number; number: number; image: string };
 
@@ -30,39 +31,56 @@ async function load(src: string): Promise<HTMLImageElement> {
   return img;
 }
 
+// Sheets are kept and reused while their tiles are the same, so automatic checks don't redraw them every time.
+// Only the sheets whose tiles changed (usually just the last one, as more pages are read) are drawn again.
+const sheetCache = new Map<string, Promise<string>>();
+
 export async function contactSheets(tiles: Tile[]): Promise<{ image: string; numbers: number[] }[]> {
   const sheets: { image: string; numbers: number[] }[] = [];
+  const keep = new Set<string>();
   for (let start = 0; start < tiles.length; start += COLS * ROWS) {
     const group = tiles.slice(start, start + COLS * ROWS);
-    const canvas = document.createElement("canvas");
-    canvas.width = COLS * TILE_W;
-    canvas.height = Math.ceil(group.length / COLS) * TILE_H;
-    const ctx = canvas.getContext("2d")!;
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    for (const [i, t] of group.entries()) {
-      const x = (i % COLS) * TILE_W;
-      const y = Math.floor(i / COLS) * TILE_H;
-      try {
-        const img = await load(t.image);
-        const scale = Math.min((TILE_W - 8) / img.width, (TILE_H - 8) / img.height);
-        const w = img.width * scale;
-        const h = img.height * scale;
-        ctx.drawImage(img, x + (TILE_W - w) / 2, y + (TILE_H - h) / 2, w, h);
-      } catch {
-        // a picture that won't load leaves its tile blank
-      }
-      ctx.strokeStyle = "#cccccc";
-      ctx.strokeRect(x + 0.5, y + 0.5, TILE_W - 1, TILE_H - 1);
-      ctx.fillStyle = "#111111";
-      ctx.fillRect(x, y, 48, 26);
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "bold 18px sans-serif";
-      ctx.fillText(String(t.tile), x + 6, y + 19);
+    const key = group.map((t) => `${t.tile}:${t.page}:${t.number}:${t.image.length}`).join(",");
+    keep.add(key);
+    let image = sheetCache.get(key);
+    if (!image) {
+      image = drawSheet(group);
+      sheetCache.set(key, image);
     }
-    sheets.push({ image: canvas.toDataURL("image/jpeg", 0.8), numbers: group.map((t) => t.tile) });
+    sheets.push({ image: await image, numbers: group.map((t) => t.tile) });
   }
+  for (const key of sheetCache.keys()) if (!keep.has(key)) sheetCache.delete(key);
   return sheets;
+}
+
+async function drawSheet(group: Tile[]): Promise<string> {
+  const canvas = document.createElement("canvas");
+  canvas.width = COLS * TILE_W;
+  canvas.height = Math.ceil(group.length / COLS) * TILE_H;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  for (const [i, t] of group.entries()) {
+    const x = (i % COLS) * TILE_W;
+    const y = Math.floor(i / COLS) * TILE_H;
+    try {
+      const img = await load(t.image);
+      const scale = Math.min((TILE_W - 8) / img.width, (TILE_H - 8) / img.height);
+      const w = img.width * scale;
+      const h = img.height * scale;
+      ctx.drawImage(img, x + (TILE_W - w) / 2, y + (TILE_H - h) / 2, w, h);
+    } catch {
+      // a picture that won't load leaves its tile blank
+    }
+    ctx.strokeStyle = "#cccccc";
+    ctx.strokeRect(x + 0.5, y + 0.5, TILE_W - 1, TILE_H - 1);
+    ctx.fillStyle = "#111111";
+    ctx.fillRect(x, y, 48, 26);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 18px sans-serif";
+    ctx.fillText(String(t.tile), x + 6, y + 19);
+  }
+  return encodeCanvas(canvas, "image/jpeg", 0.8);
 }
 
 // ── 2. Ask the server ───────────────────────────────────────────────────────
@@ -119,20 +137,20 @@ export function decide(
       action: "fix",
       target: t,
       problems: broken.map((x) => `Step ${x.t.number}: ${x.b.part} ${x.b.problem}. ${x.b.fix}`),
-      say: `${reached ? `You're up to step ${reached.number}, but s` : "S"}tep ${t.number} needs fixing: the ${b.part} is ${b.problem}. ${b.fix}${more}`,
+      say: `It seems ${reached ? `you're up to step ${reached.number}, but ` : ""}step ${t.number} needs fixing: the ${b.part} is ${b.problem}. ${b.fix}${more}`,
     };
   }
   const next = tiles.find((t) => t.tile > result.completed_tile);
   if (!next) {
     return complete
-      ? { action: "done", say: `Looks like you've finished ${reached ? `step ${reached.number}, ` : ""}the last step.` }
-      : { action: "unsure", say: `Looks like you've finished everything I've read so far.${still} Ask again in a minute.` };
+      ? { action: "done", say: `It seems you've finished ${reached ? `step ${reached.number}, ` : ""}the last step.` }
+      : { action: "unsure", say: `It seems you've finished everything I've read so far.${still} Ask again in a minute.` };
   }
   if (current && current.page === next.page && current.number === next.number) return { action: "stay", say: `You're on step ${next.number}.` };
   return {
     action: "goto",
     target: next,
-    say: result.completed_tile === 0 ? `Looks like nothing's built yet. Starting at step ${next.number}.` : `Looks like you're on step ${next.number}.`,
+    say: result.completed_tile === 0 ? `It seems nothing's built yet. Starting at step ${next.number}.` : `It seems you're on step ${next.number}. Going there now.`,
   };
 }
 

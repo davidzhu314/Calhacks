@@ -2,7 +2,7 @@
 "use client";
 
 import { motion, useReducedMotion } from "motion/react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { PartMarks, type PartMark } from "@/components/HighlightBox";
 
 const MIN = 1; // 1 = the whole picture fits the screen
@@ -16,6 +16,8 @@ type Pt = { x: number; y: number };
 const clampScale = (s: number) => Math.min(MAX, Math.max(MIN, s));
 
 // Full-screen manual picture: pinch, wheel or double-tap to zoom, drag to pan.
+// With `photo`, it shows a checked camera photo instead (`target` is the photo) with `photo.overlay` (the mistake
+// boxes) drawn on the same zoomed layer, so they zoom and pan with it. No page switch or glow in that mode.
 export default function ZoomViewer({
   target,
   pageImage,
@@ -23,6 +25,7 @@ export default function ZoomViewer({
   glow,
   onGlowChange,
   marks,
+  photo,
   onClose,
 }: {
   target: string;
@@ -31,6 +34,7 @@ export default function ZoomViewer({
   glow: boolean;
   onGlowChange: (glow: boolean) => void;
   marks?: PartMark[]; // every part of this step: where it is in the parts box and where it goes
+  photo?: { label: string; overlay: ReactNode };
   onClose: () => void;
 }) {
   const reduced = useReducedMotion();
@@ -264,7 +268,7 @@ export default function ZoomViewer({
     <motion.div
       role="dialog"
       aria-modal="true"
-      aria-label={`Manual picture for step ${stepNumber ?? ""}`}
+      aria-label={photo ? photo.label : `Manual picture for step ${stepNumber ?? ""}`}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -279,9 +283,9 @@ export default function ZoomViewer({
       >
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm font-semibold text-white/85">
-            Step {stepNumber} <span className="text-white/40">· manual</span>
+            Step {stepNumber} <span className="text-white/40">· {photo ? "your build" : "manual"}</span>
           </p>
-          <button ref={closeBtn} onClick={onClose} className="hud-panel rounded-xl px-3 py-2 text-sm font-medium text-white/85 hover:text-white">
+          <button ref={closeBtn} onClick={onClose} aria-label={photo ? "Close photo" : undefined} className="hud-panel rounded-xl px-3 py-2 text-sm font-medium text-white/85 hover:text-white">
             Close
           </button>
         </div>
@@ -308,17 +312,19 @@ export default function ZoomViewer({
           ) : (
             <span />
           )}
-          <button
-            role="switch"
-            aria-checked={glow}
-            onClick={() => onGlowChange(!glow)}
-            className="hud-panel flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium text-white/80"
-          >
-            Glow
-            <span className={`relative h-4 w-7 rounded-full transition-colors ${glow ? "bg-sky-400/80" : "bg-white/20"}`}>
-              <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-[left] ${glow ? "left-3.5" : "left-0.5"}`} />
-            </span>
-          </button>
+          {!photo && (
+            <button
+              role="switch"
+              aria-checked={glow}
+              onClick={() => onGlowChange(!glow)}
+              className="hud-panel flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium text-white/80"
+            >
+              Glow
+              <span className={`relative h-4 w-7 rounded-full transition-colors ${glow ? "bg-sky-400/80" : "bg-white/20"}`}>
+                <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-[left] ${glow ? "left-3.5" : "left-0.5"}`} />
+              </span>
+            </button>
+          )}
         </div>
       </motion.header>
 
@@ -342,8 +348,13 @@ export default function ZoomViewer({
             className="absolute origin-top-left will-change-transform"
             style={{ left: fit.x, top: fit.y, width: fit.w, height: fit.h }}
           >
-            <img src={src} alt={mode === "page" ? "Whole manual page" : `Manual picture for step ${stepNumber ?? ""}`} draggable={false} className={`h-full w-full rounded-lg ${glow ? "holo-image" : ""}`} />
-            {mode === "step" && <PartMarks marks={marks} />}
+            <img
+              src={src}
+              alt={photo ? photo.label : mode === "page" ? "Whole manual page" : `Manual picture for step ${stepNumber ?? ""}`}
+              draggable={false}
+              className={`h-full w-full rounded-lg ${glow && !photo ? "holo-image" : ""}`}
+            />
+            {photo ? photo.overlay : mode === "step" && <PartMarks marks={marks} />}
           </div>
         )}
       </motion.div>

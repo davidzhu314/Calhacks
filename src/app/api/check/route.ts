@@ -3,6 +3,7 @@
 
 import { askClaude, ClaudeError, type Part } from "@/lib/claude";
 import { firstJsonObject } from "@/lib/json";
+import { parseIssueBox, parseIssueKind, type IssueBox, type IssueKind } from "@/lib/issueBox";
 
 const MAX_IMAGE_CHARS = 4_000_000;
 
@@ -10,7 +11,8 @@ export type CheckResult = {
   step_complete: boolean;
   confidence: number; // 0–1: how sure the step_complete call is (forced low when the camera can't see the build)
   can_see: boolean; // false when the camera view doesn't show the build clearly (dark, covered, blurry, off-frame)
-  issues: { part: string; problem: string; fix: string }[];
+  // box: where the mistake is in the CAMERA photo, normalized 0-1; missing when the model couldn't place it
+  issues: { part: string; problem: string; fix: string; kind?: IssueKind; box?: IssueBox }[];
   say: string; // one short sentence to speak aloud
 };
 
@@ -35,14 +37,34 @@ in the right place and orientation?
 
 Reply with JSON only, no other text:
 {"can_see": boolean, "step_complete": boolean, "confidence": number between 0 and 1,
- "issues": [{"part": "piece by color and size", "problem": "what's wrong", "fix": "what to do"}],
+ "issues": [{"part": "piece by color and size", "problem": "what's wrong", "fix": "what to do",
+             "kind": "wrong_part" | "orientation" | "misalignment" | "missing_part" | "incorrect_placement" | "other",
+             "box": {"left": int, "top": int, "right": int, "bottom": int}}],
  "say": "one sentence, at most 20 words, to speak to the builder"}
 - can_see: false if CAMERA doesn't clearly show the build (too dark, covered, blurry, or the build isn't in frame).
 - confidence: how sure you are that step_complete is right. It is NOT how sure you are that the camera is unusable.
-- If can_see is false: step_complete false, issues empty, and "say" asks for a closer or clearer view.`;
+- If can_see is false: step_complete false, issues empty, and "say" asks for a closer or clearer view.
+- issues: only mistakes you can actually see in CAMERA. A piece that is there but wrong (wrong color, size or
+  shape) is wrong_part. A piece that isn't there at all is missing_part. Hands, fingers, shadows, the table and
+  loose pieces lying beside the build are not part of the build.
+- fix: one specific action naming the piece, like "Turn the red 2x4 so it runs left to right."
+- box: where the mistake is in the CAMERA image (never the manual pictures), as whole-number percentages of
+  CAMERA's width (left, right) and height (top, bottom), 0 to 100. Draw it tight around the wrong piece. For a
+  missing piece, box the spot where it belongs only if that spot is clearly visible. Leave "box" out if you
+  aren't sure where it is, or the piece is hidden or out of frame. Never guess a box.`;
 
 function isImage(s: unknown): s is string {
   return typeof s === "string" && s.startsWith("data:image/") && s.length <= MAX_IMAGE_CHARS;
+}
+
+function isIssue(i: unknown): i is Record<string, unknown> {
+  return !!i && typeof i === "object" && ["part", "problem", "fix"].some((k) => typeof (i as Record<string, unknown>)[k] === "string");
+}
+
+// Keeps the issue text even when its box is missing or bad.
+function toIssue(i: Record<string, unknown>): CheckResult["issues"][number] {
+  const text = (v: unknown) => (typeof v === "string" ? v : "");
+  return { part: text(i.part), problem: text(i.problem), fix: text(i.fix), kind: parseIssueKind(i.kind), box: parseIssueBox(i.box) };
 }
 
 // The model is asked for bare JSON; tolerate a stray code fence anyway.
@@ -57,7 +79,7 @@ function parseResult(text: string): CheckResult | null {
       can_see: canSee,
       step_complete: canSee && r.step_complete,
       confidence: canSee ? Math.max(0, Math.min(1, r.confidence)) : Math.min(0.3, Math.max(0, r.confidence)),
-      issues: canSee && Array.isArray(r.issues) ? r.issues : [],
+      issues: canSee && Array.isArray(r.issues) ? r.issues.filter(isIssue).map(toIssue) : [],
       say: typeof r.say === "string" ? r.say : "",
     };
   } catch {

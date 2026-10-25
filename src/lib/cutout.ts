@@ -4,6 +4,8 @@
 // removes the paper background (flood fill from the edges), drops small specks like the "1x" label,
 // and trims to the piece. Returns a transparent PNG plus its size, or null if nothing usable is left.
 
+import { encodeCanvas } from "@/lib/encode";
+
 const TOLERANCE = 42; // how far (RGB distance) a pixel can be from the background color and still count as background
 const MIN_PIECE_SHARE = 0.12; // blobs smaller than this share of the biggest blob are dropped (labels, specks)
 
@@ -116,5 +118,5 @@ export async function cutOutPiece(dataUrl: string): Promise<Cutout | null> {
   out.width = cw;
   out.height = ch;
   out.getContext("2d")?.drawImage(canvas, cx, cy, cw, ch, 0, 0, cw, ch);
-  return { image: out.toDataURL("image/png"), width: cw / w, height: ch / h, pxWidth: cw, pxHeight: ch };
+  return { image: await encodeCanvas(out, "image/png"), width: cw / w, height: ch / h, pxWidth: cw, pxHeight: ch };
 }

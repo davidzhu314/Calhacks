@@ -33,6 +33,8 @@ Use `npm run lint`, `npx tsc --noEmit`, and `npm run build` for the remaining lo
 
 On the build screen, AR starts off. Use the header's **AR off / AR on** toggle to show or hide guidance at any time. The cyan outline is a **2D camera guide**, not measured 3D registration. Use **Adjust placement** and tap the camera if the suggestion is off; **Rescan** asks for a fresh view. Amber means alignment is uncertain or has been lost. The guide never advances a step; **Check build** remains the verification action. Camera access needs HTTPS or localhost, and live grounding needs the existing Claude key.
 
+For live AR, keep the workpiece and required part clearly in view. AR sends a more detailed camera frame than step checks and can recognize an early step's loose base piece as the workpiece. If it cannot see the build, it gives a view hint and tries again after the camera moves to a new, steady view. It does not keep retrying the same failed photo.
+
 AR and Check build now use the same visual part descriptions from the manual. During a check and while its result is on screen, AR pauses and its overlay hides so mistake boxes and the checked photo stay clear. Close the result to resume with a fresh AR scan. Older saved manuals still work through part-name fallbacks.
 
 `npm run test:ar` checks the geometry, response validation, anchor rules, and request gate. For a mocked mobile browser run with a fake camera, start the production app (`npm run build && npm run start -- -p 3101`) and run `node scripts/e2e-ar-guide.mjs`. Set `E2E_BASE_URL` for another port and `CHROME_PATH` if Chrome is not at the macOS default path. Playwright is a development dependency only.

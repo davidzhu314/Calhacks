@@ -69,10 +69,11 @@ try {
   await page.getByText("No placement found · tap to position").waitFor();
   assert.equal(await page.getByTestId("ar-placement").count(), 0);
   assert.equal(await page.getByTestId("ar-part").count(), 1);
-  response = { ...response, visible: false };
+  response = { ...response, visible: false, explanation: "Move the camera over the workpiece." };
   await page.getByRole("button", { name: "Rescan" }).click();
   await waitCalls(4);
-  await page.getByText("Guide lost alignment — rescan or tap to position.").waitFor();
+  await page.getByText("Build not in view").waitFor();
+  await page.getByText("Can't see the workpiece. Move the camera over the workpiece.").waitFor();
   assert.equal(await page.getByTestId("ar-part").count(), 0);
   response = { ...response, visible: true, placement: { x: .55, y: .55 } };
   await page.getByRole("button", { name: "Rescan" }).click();

@@ -5,7 +5,7 @@ import type { CameraHandle } from "./CameraFeed";
 import type { ArGuide, ArPoint } from "@/lib/arGuide";
 import { parseGuide } from "@/lib/arGuide";
 import { acceptDetection, isLost, pinPlacement, sceneDelta, type Anchor } from "@/lib/arTracker";
-import { mayGround, responseIsCurrent } from "@/lib/arScheduler";
+import { mayGround, responseIsCurrent, viewReadyForRetry } from "@/lib/arScheduler";
 import type { PartLine } from "@/lib/parts";
 
 export type GuidePhase = "off" | "finding" | "guiding" | "degraded" | "lost";
@@ -21,6 +21,8 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
   const cache = useRef(new Map<string, Anchor>());
   const anchor = useRef<Anchor | null>(null);
   const baseline = useRef<Uint8ClampedArray | null>(null);
+  const failedView = useRef<Uint8ClampedArray | null>(null);
+  const previousView = useRef<Uint8ClampedArray | null>(null);
   const candidate = useRef<ArGuide | null>(null);
   const requestId = useRef(0);
   const busy = useRef(false);
@@ -36,6 +38,8 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
     activeKey.current = key;
     requestId.current++;
     baseline.current = null;
+    failedView.current = null;
+    previousView.current = null;
     candidate.current = null;
     // Navigation swaps the active anchor; these state updates deliberately follow the new key.
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -52,8 +56,9 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
     const timer = window.setInterval(() => {
       const state = current.current;
       if (!mayGround({ enabled: state.enabled, blocked: state.blocked, hidden: document.hidden, ready: !!state.target && !!state.part, due: due.current, busy: busy.current, now: Date.now(), lastRequest: lastRequest.current })) return;
-      const frame = camera.current?.capture();
+      const frame = camera.current?.capture("detail");
       if (!frame) return;
+      const requestView = camera.current?.sample() ?? null;
       due.current = false;
       busy.current = true;
       lastRequest.current = Date.now();
@@ -68,14 +73,17 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
           if (!result.visible) {
             anchor.current = null;
             cache.current.delete(requestKey);
+            failedView.current = requestView;
+            previousView.current = null;
             setGuide(result);
             setPhase("lost");
-            setMessage("Guide lost alignment — rescan or tap to position.");
+            setMessage(`Can't see the workpiece. ${result.explanation || "Aim the camera at the build, then hold it steady."}`);
             return;
           }
           const accepted = acceptDetection(anchor.current, result, Date.now(), .35, candidate.current);
           if (accepted) {
             candidate.current = null;
+            failedView.current = null;
             anchor.current = accepted;
             cache.current.set(requestKey, accepted);
             baseline.current = camera.current?.sample() ?? null;
@@ -107,7 +115,19 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
   useEffect(() => {
     if (!enabled) return;
     const timer = window.setInterval(() => {
-      if (document.hidden || busy.current || !anchor.current || anchor.current.guide.demo) return;
+      if (document.hidden || busy.current) return;
+      const sample = camera.current?.sample() ?? null;
+      if (!anchor.current) {
+        if (viewReadyForRetry(failedView.current, previousView.current, sample, sceneDelta)) {
+          failedView.current = null;
+          due.current = true;
+          setPhase("finding");
+          setMessage("New view detected — looking for the build.");
+        }
+        previousView.current = sample;
+        return;
+      }
+      if (anchor.current.guide.demo) return;
       if (isLost(anchor.current, Date.now())) {
         anchor.current = null;
         cache.current.delete(activeKey.current);
@@ -115,7 +135,6 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
         setGuide(null);
         setPhase("lost"); setMessage("Guide lost alignment — rescan or tap to position."); due.current = true; return;
       }
-      const sample = camera.current?.sample();
       if (sample && baseline.current && sceneDelta(sample, baseline.current) > MOVED) {
         if (anchor.current.pinned) {
           anchor.current = null;
@@ -134,6 +153,8 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
     cache.current.delete(activeKey.current);
     anchor.current = null;
     baseline.current = null;
+    failedView.current = null;
+    previousView.current = null;
     candidate.current = null;
     due.current = true;
     setGuide(null);

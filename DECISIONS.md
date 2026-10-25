@@ -189,3 +189,9 @@ The step card used to be keyed to the step, so every step change faded the whole
 - `/api/check` receives the step's part descriptions to distinguish similar pieces. `/api/ar-guide` now receives those same descriptions, including the full step part list, and asks the model to omit uncertain part boxes and placements.
 - Starting a check clears the old AR anchor. AR pauses and hides while the check or its result is visible; dismissing the result starts a fresh scan. The check result remains the source of truth for step completion and mistake markers.
 - Lint, TypeScript, offline tests, production build, and a mocked mobile browser flow were run after the integration. The browser flow verifies that AR and Check build receive matching part descriptions and that mistake boxes take visual priority. Real-camera model accuracy remains to be tested.
+
+## AR camera reacquisition on ar-akhil
+
+- AR alone sends a 1280-pixel, higher-quality camera frame so small parts are easier to distinguish; step checks keep their smaller frame for speed.
+- The guide prompt treats a loose base piece as the workpiece on early steps and asks for a specific view correction when the camera cannot see it. It still omits ungrounded coordinates.
+- After a failed view, the browser waits for a substantially different, steady camera scene before asking again. This avoids repeatedly charging for an unchanged unusable photo. The four-second request gate and one-request-at-a-time rule still apply.

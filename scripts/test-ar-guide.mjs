@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { coverMap, frameToScreen, screenToFrame, visibleInCover } from "../src/lib/arGeometry.ts";
 import { parseGuide } from "../src/lib/arGuide.ts";
 import { acceptDetection, iou, isLost, pinPlacement, sceneDelta } from "../src/lib/arTracker.ts";
-import { mayGround, responseIsCurrent } from "../src/lib/arScheduler.ts";
+import { mayGround, responseIsCurrent, viewReadyForRetry } from "../src/lib/arScheduler.ts";
 
 let count = 0;
 const check = (name, fn) => { fn(); count++; process.stdout.write(`PASS ${name}\n`); };
@@ -80,5 +80,14 @@ check("late replies after navigation or rescan are ignored", () => {
   assert.equal(responseIsCurrent(old, { key: "5-1-0", id: 2, enabled: true, blocked: false }), false);
   assert.equal(responseIsCurrent(old, { key: "5-0-0", id: 2, enabled: true, blocked: false }), false);
   assert.equal(responseIsCurrent(old, { ...old, enabled: true, blocked: true }), false);
+});
+check("failed view retries only after the camera changes and settles", () => {
+  const failed = Uint8Array.of(10, 10, 10, 10);
+  const moved = Uint8Array.of(100, 100, 100, 100);
+  const settling = Uint8Array.of(40, 40, 40, 40);
+  assert.equal(viewReadyForRetry(failed, failed, failed, sceneDelta), false);
+  assert.equal(viewReadyForRetry(failed, settling, moved, sceneDelta), false);
+  assert.equal(viewReadyForRetry(failed, moved, moved, sceneDelta), true);
+  assert.equal(viewReadyForRetry(null, moved, moved, sceneDelta), false);
 });
 process.stdout.write(`${count}/${count} AR tests passed\n`);

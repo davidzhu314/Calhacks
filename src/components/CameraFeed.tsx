@@ -8,13 +8,14 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 export type CameraHandle = {
-  capture: () => string | null;
+  capture: (mode?: "standard" | "detail") => string | null;
   sample: () => Uint8ClampedArray | null;
   size: () => { w: number; h: number } | null;
   geometry: () => { videoWidth: number; videoHeight: number; boxWidth: number; boxHeight: number } | null;
 };
 
 const MAX_SIDE = 896; // enough detail for bricks, small enough to upload fast on venue Wi-Fi
+const AR_MAX_SIDE = 1280; // AR needs the small part and assembly in the same photo
 const SAMPLE_W = 32;
 const SAMPLE_H = 24;
 
@@ -64,15 +65,15 @@ const CameraFeed = forwardRef<CameraHandle, { onStatusChange?: (status: CameraSt
   }, []);
 
   useImperativeHandle(ref, () => ({
-    capture() {
+    capture(mode = "standard") {
       const v = video.current;
       if (!v || !v.videoWidth) return null;
-      const scale = Math.min(1, MAX_SIDE / Math.max(v.videoWidth, v.videoHeight));
+      const scale = Math.min(1, (mode === "detail" ? AR_MAX_SIDE : MAX_SIDE) / Math.max(v.videoWidth, v.videoHeight));
       const canvas = document.createElement("canvas");
       canvas.width = Math.round(v.videoWidth * scale);
       canvas.height = Math.round(v.videoHeight * scale);
       canvas.getContext("2d")?.drawImage(v, 0, 0, canvas.width, canvas.height);
-      return canvas.toDataURL("image/jpeg", 0.7);
+      return canvas.toDataURL("image/jpeg", mode === "detail" ? 0.82 : 0.7);
     },
     size() {
       const v = video.current;

@@ -19,19 +19,23 @@ export default function ProductImage({
   className?: string;
 }) {
   const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
   // LEGO/IKEA CDNs ignore resize params; drop them so the optimizer's allow-list matches.
   const clean = src.split("?")[0];
   return (
     <>
       <span aria-hidden className={`absolute inset-0 bg-white transition-opacity duration-500 ${loaded ? "opacity-100" : "opacity-0"}`} />
-      {!loaded && <span aria-hidden className="absolute inset-0 animate-pulse bg-gradient-to-br from-white/[0.06] to-white/[0.02]" />}
+      {!loaded && !failed && <span aria-hidden className="absolute inset-0 animate-pulse bg-gradient-to-br from-white/[0.06] to-white/[0.02]" />}
+      {failed && <span className="absolute inset-0 grid place-items-center bg-[#162638] px-4 text-center font-mono text-[10px] uppercase tracking-widest text-white/50">Image unavailable</span>}
       <Image
         src={clean}
         alt=""
         fill
         sizes={sizes}
         priority={priority}
+        unoptimized={clean.includes("lego.com")}
         onLoad={() => setLoaded(true)}
+        onError={() => setFailed(true)}
         className={`object-contain transition duration-500 ${padded ? "p-3" : ""} ${loaded ? "opacity-100" : "opacity-0"} ${className}`}
       />
     </>

@@ -24,18 +24,18 @@ export default function ManualCard({ source, title, subtitle, coverUrl, meta, pr
   return (
     <motion.article
       layout
-      initial={{ opacity: 0, y: 16 }}
+      initial={index < 6 ? { opacity: 0, y: 10 } : false}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.97 }}
       whileHover={{ y: -4 }}
       transition={{ delay: index * 0.04, type: "spring", stiffness: 260, damping: 26 }}
-      className="group relative flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] shadow-[0_10px_30px_-12px_rgba(0,0,0,0.7)] transition-colors hover:border-sky-300/30 hover:shadow-[0_20px_50px_-20px_rgba(92,200,255,0.45)]"
+      className="ui-card group relative flex flex-col overflow-hidden transition-[border-color,box-shadow] hover:border-sky-300/40 hover:shadow-[0_20px_50px_-25px_rgba(73,189,245,0.45)]"
     >
       <button
         onClick={onAction}
         disabled={busy}
         aria-label={`${action} ${title}`}
-        className={`relative aspect-[4/3] w-full overflow-hidden ${coverUrl ? "bg-white/[0.03]" : "bg-gradient-to-b from-sky-400/10 to-transparent"}`}
+        className={`relative m-2 mb-0 aspect-[4/3] w-[calc(100%_-_1rem)] overflow-hidden rounded-xl ${coverUrl ? "bg-white" : "bg-gradient-to-b from-sky-400/10 to-transparent"}`}
       >
         {coverUrl ? (
           <ProductImage src={coverUrl} sizes="(max-width: 640px) 100vw, 380px" className="group-hover:scale-[1.04]" />
@@ -54,7 +54,7 @@ export default function ManualCard({ source, title, subtitle, coverUrl, meta, pr
       </button>
 
       <div className="flex flex-1 flex-col p-4">
-        <h3 className="text-[15px] font-semibold leading-snug tracking-tight">{title}</h3>
+        <h3 className="line-clamp-2 text-[15px] font-semibold leading-snug tracking-tight">{title}</h3>
         <p className="mt-0.5 text-xs text-white/50">{subtitle}</p>
         {progress != null && (
           <div className="mt-3 h-1 overflow-hidden rounded-full bg-white/10">
@@ -72,7 +72,7 @@ export default function ManualCard({ source, title, subtitle, coverUrl, meta, pr
             <button
               onClick={onAction}
               disabled={busy}
-              className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-400 hover:text-ink active:scale-95 disabled:opacity-50"
+              className="ui-secondary min-h-9 px-3 py-1.5 text-xs disabled:opacity-50"
             >
               {busy ? "Opening…" : `${action} →`}
             </button>

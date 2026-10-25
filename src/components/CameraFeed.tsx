@@ -15,6 +15,7 @@ const SAMPLE_H = 24;
 const CameraFeed = forwardRef<CameraHandle>(function CameraFeed(_, ref) {
   const video = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
   const sampler = useRef<CanvasRenderingContext2D | null>(null);
 
   useEffect(() => {
@@ -23,7 +24,7 @@ const CameraFeed = forwardRef<CameraHandle>(function CameraFeed(_, ref) {
 
     async function start() {
       if (!navigator.mediaDevices?.getUserMedia) {
-        setError("Camera needs HTTPS (or localhost). Open the deployed https:// link on your phone.");
+        setError("Camera access needs HTTPS or localhost. Open the secure BuildSight link on your phone.");
         return;
       }
       try {
@@ -34,7 +35,7 @@ const CameraFeed = forwardRef<CameraHandle>(function CameraFeed(_, ref) {
         if (cancelled) return stream.getTracks().forEach((t) => t.stop());
         if (video.current) video.current.srcObject = stream;
       } catch (e) {
-        setError(e instanceof Error ? `Camera blocked: ${e.message}` : "Camera blocked.");
+        setError(e instanceof Error && e.name === "NotAllowedError" ? "Allow camera access in your browser to check your build." : e instanceof Error ? `Camera unavailable: ${e.message}` : "Camera unavailable.");
       }
     }
     start();
@@ -77,10 +78,17 @@ const CameraFeed = forwardRef<CameraHandle>(function CameraFeed(_, ref) {
 
   return (
     <div className="absolute inset-0 bg-black">
-      <video ref={video} autoPlay playsInline muted className="h-full w-full object-cover" />
-      {error && (
-        <div className="absolute inset-0 grid place-items-center p-6 text-center text-sm text-white/80">
-          {error}
+      <video ref={video} autoPlay playsInline muted onPlaying={() => setReady(true)} className="h-full w-full object-cover" />
+      {!ready && (
+        <div role="status" className="absolute inset-0 grid place-items-center bg-[radial-gradient(circle_at_50%_45%,#102436,#030912_70%)] p-6 text-center">
+          <div className="max-w-xs">
+            <span aria-hidden className="mx-auto grid h-16 w-16 place-items-center rounded-2xl border border-sky-300/25 bg-sky-300/10 text-sky-200">
+              <svg viewBox="0 0 24 24" className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h4l2-2h4l2 2h4v12H4z" /><circle cx="12" cy="13" r="3" /></svg>
+            </span>
+            <p className="mt-4 text-lg font-semibold">{error ? "Camera unavailable" : "Starting camera"}</p>
+            <p className="mt-2 text-sm leading-relaxed text-white/60">{error ?? "Keep your work area in view. The live feed will appear here when the camera is ready."}</p>
+            {!error && <div className="scan-bar mx-auto mt-5 h-0.5 w-36" />}
+          </div>
         </div>
       )}
     </div>

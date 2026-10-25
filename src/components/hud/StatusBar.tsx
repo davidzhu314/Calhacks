@@ -1,31 +1,14 @@
-"use client";
-
-import { useEffect, useState } from "react";
-
-// Top strip: wordmark and clock.
+// Shared wordmark for the manual library.
 export default function StatusBar({ right }: { right?: React.ReactNode }) {
-  const [now, setNow] = useState<Date | null>(null);
-  useEffect(() => {
-    const tick = () => setNow(new Date());
-    const first = setTimeout(tick, 0);
-    const t = setInterval(tick, 1000);
-    return () => {
-      clearTimeout(first);
-      clearInterval(t);
-    };
-  }, []);
-
   return (
-    <header className="relative z-10 flex items-center justify-between gap-4 px-5 pt-[max(1.1rem,env(safe-area-inset-top))] sm:px-8">
+    <header className="relative z-10 mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-5 pt-[max(1.1rem,env(safe-area-inset-top))] sm:px-8">
       <div className="flex items-center gap-2.5">
         <LogoMark />
-        <span className="text-[15px] font-semibold tracking-tight">BuildSight</span>
+        <span className="text-[15px] font-semibold tracking-tight">BuildSight<span className="text-sky-300">.</span></span>
       </div>
       <div className="flex items-center gap-4">
         {right}
-        <span className="font-mono text-xs tabular-nums text-white/50">
-          {now ? now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "--:--:--"}
-        </span>
+        <span className="hidden font-mono text-[10px] uppercase tracking-[0.16em] text-white/45 sm:block">Camera-guided assembly</span>
       </div>
     </header>
   );

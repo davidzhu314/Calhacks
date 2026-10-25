@@ -203,7 +203,9 @@ function PlacedPart({ pack, p, fresh, liveRef }: { pack: Pack; p: Placement; fre
   });
   return (
     <group ref={ref} position={p.pos} rotation-y={p.rotY}>
-      <primitive object={obj} />
+      <group rotation={p.tilt ?? [0, 0, 0]}>
+        <primitive object={obj} />
+      </group>
     </group>
   );
 }
@@ -240,7 +242,9 @@ function Ghost({ pack, p, stuck, groupRef }: { pack: Pack; p: Placement; stuck: 
   });
   return (
     <group ref={groupRef} position={p.pos} rotation-y={p.rotY}>
-      <primitive object={obj} />
+      <group rotation={p.tilt ?? [0, 0, 0]}>
+        <primitive object={obj} />
+      </group>
       <mesh ref={ring} rotation-x={-Math.PI / 2} position-y={0.08} renderOrder={2}>
         <ringGeometry args={[radius * 0.96, radius, 64]} />
         <meshBasicMaterial color={HOLO} transparent opacity={0.4} depthWrite={false} blending={THREE.AdditiveBlending} />
@@ -297,7 +301,9 @@ function HeldPart({ pack, p, held, liveRef, shakeKey, groupRef }: { pack: Pack; 
   return (
     <>
       <group ref={groupRef}>
-        <primitive object={obj} />
+        <group rotation={p.tilt ?? [0, 0, 0]}>
+          <primitive object={obj} />
+        </group>
       </group>
       <mesh ref={line} renderOrder={3} layers={GUIDE_LAYER}>
         <cylinderGeometry args={[pack.stage.radius * 0.0018, pack.stage.radius * 0.0018, 1, 8]} />
@@ -537,6 +543,11 @@ export default function PracticeScene({ pack, placed, held, stuck, shakeKey, suc
   const p = pack.placements[placed] as Placement | undefined;
   const liveRef = useRef<Live>(null as unknown as Live);
   if (liveRef.current === null) liveRef.current = makeLive(pack);
+  // Pieces of a sub-assembly disappear into it once it's picked up (or placed).
+  const hidden = new Set<string>();
+  pack.placements.forEach((q, i) => {
+    if (q.consumes && (placed > i || (placed === i && held))) q.consumes.forEach((id) => hidden.add(id));
+  });
   const ghost = useRef<THREE.Group | null>(null);
   const heldGroup = useRef<THREE.Group | null>(null);
 
@@ -560,9 +571,9 @@ export default function PracticeScene({ pack, placed, held, stuck, shakeKey, suc
       <CameraRig pack={pack} liveRef={liveRef} gyro={gyro} focus={p?.focus} />
       <Lighting pack={pack} />
       <Base pack={pack} placed={placed} />
-      {pack.placements.slice(0, placed).map((q, i) => (
-        <PlacedPart key={q.id} pack={pack} p={q} liveRef={liveRef} fresh={i === placed - 1 && successKey > 0} />
-      ))}
+      {pack.placements.slice(0, placed).map((q, i) =>
+        hidden.has(q.id) ? null : <PlacedPart key={q.id} pack={pack} p={q} liveRef={liveRef} fresh={i === placed - 1 && successKey > 0} />,
+      )}
       {p && <Ghost pack={pack} p={p} stuck={stuck} groupRef={ghost} />}
       {p && held && <HeldPart key={held.partId + p.id} pack={pack} p={p} held={held} liveRef={liveRef} shakeKey={shakeKey} groupRef={heldGroup} />}
       <Labels pack={pack} current={p?.label} />

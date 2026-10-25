@@ -3,7 +3,7 @@
 // Edges carry a 0.2 mm bevel; studs are instanced and have a bevelled top.
 
 import * as THREE from "three";
-import { LEGO, legoBox, rectStuds, roundDiameter, roundStuds, slope45Profile, tubeCentres } from "../dims";
+import { LEGO, axleLength, legoBox, rectStuds, roundDiameter, roundStuds, slope45Profile, tubeCentres } from "../dims";
 import type { MaterialFor } from "./materials";
 
 const B = LEGO.BEVEL;
@@ -17,7 +17,7 @@ function mesh(geo: THREE.BufferGeometry, mat: THREE.Material, name?: string) {
 
 // Extrudes a shape drawn in the XZ footprint (shape y = -z) upward to height h, with bevelled top and bottom edges.
 // The shape should already be inset by the bevel: the bevel grows it back to full size.
-function extrudeUp(shape: THREE.Shape, h: number, bevel = B, curveSegments = 12) {
+function extrudeUp(shape: THREE.Shape, h: number, bevel: number = B, curveSegments = 12) {
   const g = new THREE.ExtrudeGeometry(shape, {
     depth: Math.max(0.01, h - 2 * bevel),
     bevelEnabled: bevel > 0,
@@ -133,8 +133,60 @@ function circleShape(r: number, holeR = 0) {
   return s;
 }
 
-/** n x n round plate, optionally with a centre pin hole. */
-export function roundPlate(n: number, color: string, hole: boolean, mat: MaterialFor) {
+// Technic axle cross section: 4.8 mm across, 1.8 mm arms.
+function crossShape(span: number, arm: number) {
+  const a = arm / 2;
+  const l = span / 2;
+  const c = new THREE.Shape();
+  c.moveTo(-a, -l);
+  c.lineTo(a, -l);
+  c.lineTo(a, -a);
+  c.lineTo(l, -a);
+  c.lineTo(l, a);
+  c.lineTo(a, a);
+  c.lineTo(a, l);
+  c.lineTo(-a, l);
+  c.lineTo(-a, a);
+  c.lineTo(-l, a);
+  c.lineTo(-l, -a);
+  c.lineTo(-a, -a);
+  c.closePath();
+  return c;
+}
+
+function axleHoleDecal(y: number, color: string, mat: MaterialFor, under = false) {
+  const decal = new THREE.ShapeGeometry(crossShape(LEGO.AXLE_SPAN, LEGO.AXLE_ARM));
+  decal.rotateX(under ? Math.PI / 2 : -Math.PI / 2);
+  decal.translate(0, y, 0);
+  return mesh(decal, mat("absDark", color), "axle-hole");
+}
+
+/** Technic axle, `length` studs long (9 → 71.8 mm), standing on its bottom end. */
+export function axle(length: number, color: string, mat: MaterialFor) {
+  const b = 0.15;
+  const g = new THREE.Group();
+  g.add(mesh(extrudeUp(crossShape(LEGO.AXLE_SPAN - 2 * b, LEGO.AXLE_ARM - 2 * b), axleLength(length), b, 4), mat("abs", color), "axle"));
+  return g;
+}
+
+/** 2L smooth axle connector: a 15.8 mm tube with an axle hole at each end. */
+export function axleConnector(color: string, mat: MaterialFor) {
+  const g = new THREE.Group();
+  const r = LEGO.CONNECTOR_D / 2;
+  const h = axleLength(2);
+  const b = LEGO.BEVEL;
+  const body = new THREE.LatheGeometry(
+    [new THREE.Vector2(0, 0), new THREE.Vector2(r - b, 0), new THREE.Vector2(r, b), new THREE.Vector2(r, h - b), new THREE.Vector2(r - b, h), new THREE.Vector2(0, h)],
+    32,
+  );
+  g.add(mesh(body, mat("abs", color), "body"));
+  g.add(axleHoleDecal(h + 0.02, color, mat));
+  g.add(axleHoleDecal(-0.02, color, mat, true));
+  return g;
+}
+
+/** n x n round plate: optional centre pin hole or axle hole; a tile has a smooth top (no studs). */
+export function roundPlate(n: number, color: string, hole: boolean, mat: MaterialFor, opts: { axleHole?: boolean; tile?: boolean } = {}) {
   const g = new THREE.Group();
   const r = roundDiameter(n) / 2;
   const h = LEGO.PLATE_H;
@@ -145,8 +197,11 @@ export function roundPlate(n: number, color: string, hole: boolean, mat: Materia
     bore.translate(0, h / 2, 0);
     g.add(mesh(bore, mat("absDark", color), "hole"));
   }
-  const spots = roundStuds(n).filter(([x, z]) => !hole || Math.hypot(x, z) > LEGO.PIN_HOLE_D);
-  g.add(studs(spots, h, mat("abs", color)));
+  if (opts.axleHole && !hole) g.add(axleHoleDecal(h + 0.02, color, mat));
+  if (!opts.tile) {
+    const spots = roundStuds(n).filter(([x, z]) => !hole || Math.hypot(x, z) > LEGO.PIN_HOLE_D);
+    g.add(studs(spots, h, mat("abs", color)));
+  }
   return g;
 }
 

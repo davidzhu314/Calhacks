@@ -11,16 +11,17 @@ import { mayGround, responseIsCurrent, viewReadyForRetry } from "@/lib/arSchedul
 import type { PartLine } from "@/lib/parts";
 
 export type GuidePhase = "off" | "finding" | "guiding" | "degraded" | "lost";
-type Input = { enabled: boolean; key: string; camera: RefObject<CameraHandle | null>; target: string | null; previous: string | null; instruction: string; part: string; parts: PartLine[]; blocked: boolean };
+type Input = { enabled: boolean; key: string; camera: RefObject<CameraHandle | null>; target: string | null; previous: string | null; instruction: string; part: string; parts: PartLine[]; blocked: boolean; sourceOnly?: boolean };
 const MOVED = .13;
 
-export function useArGuide({ enabled, key, camera, target, previous, instruction, part, parts, blocked }: Input) {
+export function useArGuide({ enabled, key, camera, target, previous, instruction, part, parts, blocked, sourceOnly = false }: Input) {
   const [phase, setPhase] = useState<GuidePhase>("off");
   const [guide, setGuide] = useState<ArGuide | null>(null);
   const [adjusting, setAdjusting] = useState(false);
   const [message, setMessage] = useState("");
   const [rotation, setRotation] = useState(0);
   const cache = useRef(new Map<string, Anchor>());
+  const sourceCache = useRef(new Map<string, ArGuide>());
   const anchor = useRef<Anchor | null>(null);
   const baseline = useRef<Uint8ClampedArray | null>(null);
   const failedView = useRef<Uint8ClampedArray | null>(null);
@@ -32,8 +33,8 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
   const lastRequest = useRef(0);
   const due = useRef(false);
   const activeKey = useRef(key);
-  const current = useRef({ enabled, key, target, previous, instruction, part, parts, blocked });
-  useEffect(() => { current.current = { enabled, key, target, previous, instruction, part, parts, blocked }; }, [enabled, key, target, previous, instruction, part, parts, blocked]);
+  const current = useRef({ enabled, key, target, previous, instruction, part, parts, blocked, sourceOnly });
+  useEffect(() => { current.current = { enabled, key, target, previous, instruction, part, parts, blocked, sourceOnly }; }, [enabled, key, target, previous, instruction, part, parts, blocked, sourceOnly]);
   useEffect(() => () => { requestId.current++; }, []);
 
   useEffect(() => {
@@ -48,11 +49,12 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setAdjusting(false);
     setRotation(0);
-    anchor.current = cache.current.get(key) ?? null;
-    setGuide(anchor.current?.guide ?? null);
-    setPhase(enabled ? anchor.current ? "guiding" : "finding" : "off");
-    due.current = enabled && !anchor.current;
-  }, [key, enabled]);
+    anchor.current = sourceOnly ? null : cache.current.get(key) ?? null;
+    const stored = sourceOnly ? sourceCache.current.get(key) ?? null : anchor.current?.guide ?? null;
+    setGuide(stored);
+    setPhase(!enabled ? "off" : !stored ? "finding" : !sourceOnly || stored.partBox ? "guiding" : stored.visible ? "degraded" : "lost");
+    due.current = enabled && !stored;
+  }, [key, enabled, sourceOnly]);
 
   useEffect(() => {
     if (!enabled || blocked) return;
@@ -72,9 +74,10 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
       const id = ++requestId.current;
       const requestKey = state.key;
       setPhase(anchor.current ? "degraded" : "finding");
-      void fetch("/api/ar-guide", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "ground", frame, expected: state.target, previous: state.previous ?? undefined, instruction: state.instruction, part: state.part, parts: state.parts }) })
+      void fetch("/api/ar-guide", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: state.sourceOnly ? "source" : "ground", frame, expected: state.target, previous: state.previous ?? undefined, instruction: state.instruction, part: state.part, parts: state.parts }) })
         .then(async (res) => { const data = await res.json(); if (!res.ok) throw new Error(data.error || "Could not locate assembly."); return parseGuide(data); })
         .then(async (coarse) => {
+          if (state.sourceOnly) return coarse;
           if (!coarse?.visible || !coarse.assemblyBox || coarse.demo || coarse.confidence < .65) return coarse;
           if (!responseIsCurrent({ key: requestKey, id }, { key: activeKey.current, id: requestId.current, enabled: current.current.enabled, blocked: current.current.blocked })) return coarse;
           try {
@@ -92,6 +95,14 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
         .then((result) => {
           if (!responseIsCurrent({ key: requestKey, id }, { key: activeKey.current, id: requestId.current, enabled: current.current.enabled, blocked: current.current.blocked })) return;
           if (!result) throw new Error("Guide response was invalid.");
+          if (state.sourceOnly) {
+            const sourceGuide = { ...result, placement: undefined };
+            sourceCache.current.set(requestKey, sourceGuide);
+            setGuide(sourceGuide);
+            setPhase(sourceGuide.partBox ? "guiding" : sourceGuide.visible ? "degraded" : "lost");
+            setMessage(sourceGuide.partBox ? "" : sourceGuide.explanation || "Loose piece not visible. Move it into view and rescan.");
+            return;
+          }
           if (!result.visible) {
             anchor.current = null;
             cache.current.delete(requestKey);
@@ -134,7 +145,7 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
   useEffect(() => {
     if (!enabled) return;
     const timer = window.setInterval(() => {
-      if (document.hidden || busy.current) return;
+      if (document.hidden || busy.current || current.current.sourceOnly) return;
       const sample = camera.current?.sample() ?? null;
       if (!anchor.current) {
         if (viewReadyForRetry(failedView.current, previousView.current, sample, sceneDelta)) {
@@ -170,6 +181,7 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
   const rescan = useCallback(() => {
     requestId.current++;
     cache.current.delete(activeKey.current);
+    sourceCache.current.delete(activeKey.current);
     anchor.current = null;
     baseline.current = null;
     failedView.current = null;

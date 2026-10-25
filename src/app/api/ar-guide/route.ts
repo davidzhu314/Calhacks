@@ -10,22 +10,24 @@ const SYSTEM = `Provide a camera-aligned 2D visual guide for one assembly step. 
 {"visible":boolean,"status":"present"|"absent"|"occluded"|"future-placement"|"ambiguous","confidence":number,"explanation":"short next action","assemblyBox":{"left":number,"top":number,"right":number,"bottom":number}|null,"partBox":same|null,"placement":{"x":number,"y":number}|null,"orientationDegrees":number|null}.
 visible means the workpiece is clearly visible in CAMERA. assemblyBox encloses that workpiece or base piece in CAMERA. partBox encloses the required part only when actually visible in CAMERA. placement is the center of where the required part should attach on the visible workpiece, only when visually justified. Omit a coordinate rather than guess. orientationDegrees is an in-image 2D cue only, not 3D pose.`;
 const FINE_SYSTEM = `The last image is a zoomed CAMERA crop around an already detected assembly, with a 10-percent grid. Previous images are MANUAL drawings only. Determine the 2D image position where the required part should attach. Return JSON only: {"visible":boolean,"confidence":number,"explanation":"short next action","placement":{"x":number,"y":number}|null,"orientationDegrees":number|null}. The point is normalized 0..1 within the CAMERA CROP, not the manual. If attachment is occluded, ambiguous, or outside the crop, set visible false and omit placement. A single camera image has no metric depth or 3D pose; do not guess height or perspective.`;
+const SOURCE_SYSTEM = `Find the REQUIRED LOOSE PART in the last CAMERA photo using the manual step pictures for identification only. Return a tight camera-frame partBox if the distinct loose piece is clearly visible. Do not box a similar piece already attached, a hand, the manual picture, or a background object. If it is absent, occluded, blurry, or ambiguous, omit partBox. Never estimate a placement: placement must be null. All box coordinates are 0..1 of the CAMERA photo. Return JSON only: {"visible":boolean,"status":"present"|"absent"|"occluded"|"ambiguous","confidence":number,"explanation":"short next action","partBox":{"left":number,"top":number,"right":number,"bottom":number}|null,"assemblyBox":null,"placement":null,"orientationDegrees":null}. visible means the required loose piece is clearly visible.`;
 
 export async function POST(request: Request) {
   let body: Record<string, unknown>;
   try { body = await request.json(); } catch { return Response.json({ error: "Body must be JSON." }, { status: 400 }); }
   const { frame, expected, previous, instruction, part, manualHint } = body;
-  const mode = body.mode === "fine" ? "fine" : body.mode === undefined || body.mode === "ground" ? "ground" : null;
+  const mode = body.mode === "fine" || body.mode === "source" ? body.mode : body.mode === undefined || body.mode === "ground" ? "ground" : null;
   if (!mode || !image(frame) || !image(expected) || (previous !== undefined && !image(previous)) || !short(instruction, 1000) || !short(part, 160) || !part.trim()) {
     return Response.json({ error: "Send a camera frame, manual step image, and a short part description." }, { status: 400 });
   }
   // Explicit local preview mode: fixed coordinates demonstrate the UI, never claim camera alignment.
   if (process.env.AR_GUIDE_DEMO === "1") {
-    return Response.json({ ...parseGuide({ visible: true, status: "future-placement", confidence: .96, demo: true,
+    const preview = parseGuide({ visible: true, status: "future-placement", confidence: .96, demo: true,
       explanation: "Simulated placement preview — use a Claude key for real camera alignment.",
       assemblyBox: { left: .28, top: .27, right: .72, bottom: .74 },
       partBox: { left: .38, top: .36, right: .49, bottom: .48 },
-      placement: { x: .56, y: .58 }, orientationDegrees: 0 }), latencyMs: 0 });
+      placement: { x: .56, y: .58 }, orientationDegrees: 0 });
+    return Response.json({ ...preview, placement: mode === "source" ? undefined : preview?.placement, latencyMs: 0 });
   }
   const parts: Part[] = [];
   if (previous) parts.push({ type: "text", text: "PREVIOUS manual state:" }, { type: "image", dataUrl: previous });
@@ -35,10 +37,10 @@ export async function POST(request: Request) {
   parts.push({ type: "text", text: `Instruction: ${instruction}\nRequired part: ${part}${stepParts.length ? `\nAll parts in this step:\n${partsPrompt(stepParts)}\n${LOOKALIKE_RULE} Box only the required part; if unsure which piece it is, omit the part box and placement.` : ""}${hint ? `\nHint: ${hint} is a position in the MANUAL drawing, NOT the camera.` : ""}` });
   const started = Date.now();
   try {
-    const reply = await askClaude({ system: mode === "fine" ? FINE_SYSTEM : SYSTEM, parts });
+    const reply = await askClaude({ system: mode === "fine" ? FINE_SYSTEM : mode === "source" ? SOURCE_SYSTEM : SYSTEM, parts });
     const guide = mode === "fine" ? parseFineGuide(firstJsonObject(reply)) : parseGuide(firstJsonObject(reply));
     if (!guide) return Response.json({ error: "Model reply was not a valid guide." }, { status: 502 });
-    return Response.json({ ...guide, latencyMs: Date.now() - started });
+    return Response.json({ ...guide, placement: mode === "source" ? undefined : guide.placement, latencyMs: Date.now() - started });
   } catch (e) {
     const err = e instanceof ClaudeError ? e : new ClaudeError("AR guide could not locate the assembly.");
     return Response.json({ error: err.message }, { status: err.status });

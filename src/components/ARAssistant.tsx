@@ -16,7 +16,8 @@ function measureSafeArea() {
 }
 const bounds = () => {
   const left = 8 + safe.left, top = Math.max(72, safe.top + 56);
-  return { left, top, right: Math.max(left, window.innerWidth - W - 8 - safe.right), bottom: Math.max(top, window.innerHeight - H - 16 - safe.bottom) };
+  const sheetClearBottom = window.innerHeight * .5 - 48;
+  return { left, top, right: Math.max(left, window.innerWidth - W - 8 - safe.right), bottom: Math.max(top, Math.min(window.innerHeight - H - 16 - safe.bottom, sheetClearBottom)) };
 };
 const orientationKey = () => `buildsight:ar-assistant:${window.innerWidth > window.innerHeight ? "landscape" : "portrait"}`;
 
@@ -75,7 +76,7 @@ export default function ARAssistant(p: Props) {
       {p.children}
       <div className="mt-3 grid grid-cols-2 gap-1.5 [&_button]:rounded-lg [&_button]:border [&_button]:border-white/15 [&_button]:px-2 [&_button]:py-2 [&_button]:text-left [&_button]:transition [&_button:hover]:bg-cyan-300/15">
         <button onClick={() => { p.onAlign(); setOpen(false); }}>{p.aligning ? "Tap A, then B" : "Align / Re-align"}</button>
-        <button onClick={p.onRescan}>Rescan</button>
+        <button onClick={() => { p.onRescan(); setOpen(false); }}>Rescan</button>
         <button onClick={() => { p.onAdjust(); setOpen(false); }} aria-pressed={p.adjusting}>{p.adjusting ? "Finish adjust" : "Adjust ghost"}</button>
         <button onClick={p.onReplay}>Replay</button>
         {p.hasPlacement && <><button onClick={() => p.onRotate(-90)} aria-label="Rotate guide left">↶ Rotate</button><button onClick={() => p.onRotate(90)} aria-label="Rotate guide right">↷ Rotate</button></>}

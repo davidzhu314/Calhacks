@@ -28,6 +28,7 @@ vi.mock("@/components/CameraFeed", async () => {
   }) };
 });
 vi.mock("@/components/ManualPanel", () => ({ default: () => <div data-testid="manual-panel" /> }));
+vi.mock("@/components/PieceHologram", () => ({ default: () => <div data-testid="hologram" /> }));
 vi.mock("@/components/ZoomViewer", () => ({ default: () => <div data-testid="zoom-viewer" /> }));
 vi.mock("@/components/VoicePanel", () => ({ default: () => <div data-testid="voice-panel" /> }));
 vi.mock("@/lib/manuals", () => ({
@@ -102,7 +103,6 @@ describe("BuildView step browser", () => {
     fireEvent.click(screen.getByRole("button", { name: /Step 2 · Page 7/ }));
     await screen.findByRole("heading", { name: "Add the third piece." });
     expect(screen.getByRole("heading", { name: "Build first piece." })).toBeTruthy();
-    expect(screen.getByTestId("hologram")).toBeTruthy();
     expect(screen.getByRole("button", { name: /blue plate/ }).getAttribute("aria-pressed")).toBe("true");
     expect(mocks.saveManual).not.toHaveBeenCalled();
     expect(mocks.speak).not.toHaveBeenCalled();

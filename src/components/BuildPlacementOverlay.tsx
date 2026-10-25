@@ -9,11 +9,12 @@ import { coverMap, frameToScreen, screenToFrame, type Point } from "@/lib/arGeom
 import { rotatedSize, type Placement } from "@/lib/buildFrame";
 import { frameToStud, studPitch, studToFrame, type Registration } from "@/lib/registration";
 
-type Props = { camera: RefObject<CameraHandle | null>; registration: Registration | null; placement: Placement; part?: ExtractedPart; stepLabel: string; sourceBox: ArBox | null; tapIndex: number | null; onTap: (p: Point) => void; adjusting: boolean; nudge: Point; onNudge: (p: Point) => void; rotation: number; replay: number; success: boolean };
+type Props = { camera: RefObject<CameraHandle | null>; registration: Registration | null; placement: Placement; part?: ExtractedPart; stepLabel: string; sourceBox: ArBox | null; tapIndex: number | null; onTap: (p: Point) => void; onRestartAlign: () => void; adjusting: boolean; nudge: Point; onNudge: (p: Point) => void; rotation: number; replay: number; success: boolean };
 
 export default function BuildPlacementOverlay(p: Props) {
   const reduceMotion = useReducedMotion();
   const [size, setSize] = useState<ReturnType<CameraHandle["geometry"]>>(null);
+  const [firstTap, setFirstTap] = useState<Point | null>(null);
   useEffect(() => {
     const refresh = () => setSize(p.camera.current?.geometry() ?? null);
     refresh(); const timer = window.setInterval(refresh, 500);
@@ -29,14 +30,25 @@ export default function BuildPlacementOverlay(p: Props) {
   </g>;
   const tap = (e: React.MouseEvent<HTMLButtonElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    p.onTap(screenToFrame({ x: e.clientX - rect.left, y: e.clientY - rect.top }, map));
+    const point = screenToFrame({ x: e.clientX - rect.left, y: e.clientY - rect.top }, map);
+    if (p.tapIndex === 0) setFirstTap(frameToScreen(point, map) as Point);
+    p.onTap(point);
   };
   if (p.tapIndex !== null) return <>
-    <button className="absolute inset-0 z-[8] cursor-crosshair bg-cyan-300/[0.04]" aria-label={`Tap reference stud ${p.tapIndex === 0 ? "A" : "B"} on camera`} onClick={tap} />
-    <div className="pointer-events-none absolute left-1/2 top-24 z-[9] w-[min(18rem,80vw)] -translate-x-1/2 rounded-xl border border-cyan-300/50 bg-slate-950/90 p-3 text-center text-xs shadow-xl">
-      <p className="font-bold text-cyan-100">Align the first green plate</p>
-      <p className="mt-1 text-white/75">Tap {p.tapIndex === 0 ? "A: left end stud" : "B: right end stud"} on the straight edge.</p>
-      <div className="mx-auto mt-2 flex w-28 justify-between rounded-full border border-cyan-300/50 bg-green-800/60 px-2 py-1 text-cyan-100"><span>A ●</span><span>● B</span></div>
+    <button className="absolute inset-0 z-[11] cursor-crosshair bg-cyan-300/[0.04]" aria-label={`Tap ${p.tapIndex === 0 ? "1: left end stud" : "2: right end stud"} on the first green plate in the camera`} onClick={tap} />
+    {p.tapIndex === 1 && firstTap && <div data-testid="ar-first-tap-marker" aria-hidden className="pointer-events-none absolute z-[12] -translate-x-1/2 -translate-y-1/2" style={{ left: firstTap.x, top: firstTap.y }}><span className="grid h-9 w-9 place-items-center rounded-full border-2 border-white bg-cyan-400 text-sm font-black text-slate-950 shadow-[0_0_0_5px_#22d3ee55]">1</span></div>}
+    <div className="pointer-events-auto absolute left-1/2 top-36 z-[12] w-[min(20rem,86vw)] -translate-x-1/2 rounded-2xl border border-cyan-300/50 bg-slate-950/95 p-4 text-center text-xs text-white shadow-2xl backdrop-blur-xl sm:top-28">
+      <p className="text-sm font-bold text-cyan-100">Line up the guide with your base plate</p>
+      <p className="mt-1 leading-relaxed text-white/75">Find the <strong className="text-white">first green half-circle plate</strong>. Hold it so its straight edge is across the top of the camera view, with the rounded side below.</p>
+      <svg aria-label="Diagram of the first green plate, with tap 1 on the left end stud and tap 2 on the right end stud" className="mx-auto mt-2 h-[70px] w-[210px] max-w-full" viewBox="0 0 210 70" role="img">
+        <path d="M35 23H175A70 43 0 0 1 35 23Z" fill="#166534" stroke="#86efac" strokeWidth="2" />
+        {Array.from({ length: 8 }, (_, i) => <circle key={i} cx={35 + i * 20} cy="23" r="5" fill="#4ade80" stroke="#bbf7d0" />)}
+        <circle cx="35" cy="23" r="10" fill="none" stroke="#67e8f9" strokeWidth="2" /><circle cx="175" cy="23" r="10" fill="none" stroke="#67e8f9" strokeWidth="2" />
+        <text x="35" y="13" textAnchor="middle" fill="#a5f3fc" fontSize="11" fontWeight="800">1</text><text x="175" y="13" textAnchor="middle" fill="#a5f3fc" fontSize="11" fontWeight="800">2</text>
+      </svg>
+      <p className="font-semibold text-cyan-100">{p.tapIndex === 0 ? "1 of 2 · Tap the left end stud" : "2 of 2 · Tap the right end stud"}</p>
+      <p className="mt-1 text-white/60">Tap the studs on the real plate in the camera, not on this diagram.</p>
+      {p.tapIndex === 1 && <button type="button" className="pointer-events-auto mt-2 rounded-lg px-3 py-1.5 text-cyan-200 underline underline-offset-2 hover:text-white focus-visible:outline-2 focus-visible:outline-cyan-200" onClick={p.onRestartAlign}>Start again</button>}
     </div>
   </>;
   if (!p.registration) return source ? <svg aria-label="2D guide source piece" className="pointer-events-none absolute inset-0 z-[8] h-full w-full" viewBox={`0 0 ${map.boxW} ${map.boxH}`} preserveAspectRatio="none">{sourceMarker}</svg> : null;

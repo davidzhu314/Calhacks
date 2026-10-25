@@ -23,14 +23,14 @@ export function useBuildRegistration(camera: RefObject<CameraHandle | null>, ena
     setRegistration(null); setTapIndex(null); setMessage("");
   }, [session]);
 
-  const align = useCallback(() => { first.current = null; patch.current = null; current.current = null; setRegistration(null); setTapIndex(0); setMessage("Tap stud A on the first plate."); }, []);
+  const align = useCallback(() => { first.current = null; patch.current = null; current.current = null; setRegistration(null); setTapIndex(0); setMessage("Tap 1: left end stud on the first green plate."); }, []);
   const tap = useCallback((point: Point) => {
     const size = camera.current?.size();
     if (!size) { setMessage("Camera is not ready yet."); return; }
     const pixel = { x: point.x * size.w, y: point.y * size.h };
-    if (!first.current) { first.current = pixel; setTapIndex(1); setMessage("Now tap stud B, at the other end of the straight edge."); return; }
+    if (!first.current) { first.current = pixel; setTapIndex(1); setMessage("Tap 2: right end stud on the same straight edge."); return; }
     const result = registerTwoPoints(points[0], points[1], first.current, pixel);
-    if (!result) { first.current = null; setTapIndex(0); setMessage("Those taps were too close or too far apart. Tap stud A again."); return; }
+    if (!result) { first.current = null; setTapIndex(0); setMessage("Those taps were too close or too far apart. Tap the left end stud again."); return; }
     const frame = camera.current?.trackFrame();
     if (frame) {
       patch.current = bestPatchOnSegment(frame, first.current.x / size.w * frame.width, first.current.y / size.h * frame.height, pixel.x / size.w * frame.width, pixel.y / size.h * frame.height);

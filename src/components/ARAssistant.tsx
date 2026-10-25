@@ -76,7 +76,7 @@ export default function ARAssistant(p: Props) {
       <p className="mt-2 line-clamp-2 text-white/55">{p.instruction}</p>
       {p.children}
       <div className="mt-3 grid grid-cols-2 gap-1.5 [&_button]:rounded-lg [&_button]:border [&_button]:border-white/15 [&_button]:px-2 [&_button]:py-2 [&_button]:text-left [&_button]:transition [&_button:hover]:bg-cyan-300/15">
-        <button onClick={() => { p.onAlign(); setOpen(false); }}>{p.aligning ? "Tap A, then B" : "Align / Re-align"}</button>
+        <button onClick={() => { p.onAlign(); setOpen(false); }}>{p.aligning ? "Restart taps 1–2" : "Align / Re-align"}</button>
         <button onClick={() => { p.onRescan(); setOpen(false); }}>Rescan</button>
         <button onClick={() => { p.onAdjust(); setOpen(false); }} aria-pressed={p.adjusting}>{p.adjusting ? "Finish adjust" : "Adjust ghost"}</button>
         <button onClick={p.onReplay}>Replay</button>

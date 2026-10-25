@@ -1106,7 +1106,7 @@ export default function BuildView() {
   return (
     <main className="relative h-dvh w-full overflow-hidden bg-ink text-white">
       <CameraFeed ref={camera} onStatusChange={setCameraStatus} />
-      {arEnabled && (basePlacement || registration.tapIndex !== null) && (!check || verdict === "pass") && <BuildPlacementOverlay key={stepKey} camera={camera} registration={basePlacement ? registration.registration : null} placement={basePlacement ?? ALIGN_PLACEHOLDER} part={arPart} stepLabel={step ? stepLabel(step) : "Next step"} sourceBox={null} tapIndex={registration.tapIndex} onTap={registration.tap} adjusting={ar.adjusting} nudge={arNudge} onNudge={(point) => editArVisual({ nudge: point })} rotation={arRotation} replay={arReplay} success={verdict === "pass"} />}
+      {arEnabled && (basePlacement || registration.tapIndex !== null) && (!check || verdict === "pass") && <BuildPlacementOverlay key={stepKey} camera={camera} registration={basePlacement ? registration.registration : null} placement={basePlacement ?? ALIGN_PLACEHOLDER} part={arPart} stepLabel={step ? stepLabel(step) : "Next step"} sourceBox={null} tapIndex={registration.tapIndex} onTap={(point) => { if (registration.tapIndex === 1) setSheetOpen(false); registration.tap(point); }} onRestartAlign={registration.align} adjusting={ar.adjusting} nudge={arNudge} onNudge={(point) => editArVisual({ nudge: point })} rotation={arRotation} replay={arReplay} success={verdict === "pass"} />}
       {!basePlacement && <ARGuideOverlay key={stepKey} camera={camera} phase={check ? "off" : ar.phase} guide={ar.guide} message={ar.message} part={arPart} stepLabel={step ? stepLabel(step) : "Next step"} registration={registration.registration} adjusting={ar.adjusting} rotation={ar.rotation} replay={arReplay} approximate onAdjust={ar.adjust} />}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-ink/70 via-transparent to-ink/80" />
       {/* the mistake boxes on the live camera too, while the camera stays where it was for the check */}
@@ -1164,7 +1164,7 @@ export default function BuildView() {
         </div>
       </header>
 
-      {arEnabled && phase.kind === "ready" && !check && <ARAssistant status={cameraStatus.state === "error" ? cameraStatus.message || "Camera unavailable" : basePlacement ? registration.tapIndex !== null ? registration.message : registration.registration ? registration.message || "Guiding from the first plate" : registration.message || "Align to the first plate" : ar.message || (ar.phase === "finding" ? "Locating assembly" : "Approximate 2D guide")} placementPhrase={arWords} instruction={step?.instruction ?? ""} aligning={registration.tapIndex !== null} adjusting={ar.adjusting} hasPlacement={!!(basePlacement ? registration.registration : ar.guide?.placement)} onAlign={registration.align} onRescan={() => { ar.rescan(); if (basePlacement) registration.align(); }} onAdjust={() => ar.setAdjusting((v) => !v)} onRotate={(delta) => basePlacement ? editArVisual({ rotation: arRotation + delta }) : ar.setRotation((v) => v + delta)} onReset={() => { editArVisual({ nudge: { x: 0, y: 0 }, rotation: 0 }); if (!basePlacement) ar.resetAdjustment(); }} onReplay={() => editArVisual({ replay: arReplay + 1 })} onHide={() => setArEnabled(false)}>
+      {arEnabled && phase.kind === "ready" && !check && registration.tapIndex === null && <ARAssistant status={cameraStatus.state === "error" ? cameraStatus.message || "Camera unavailable" : basePlacement ? registration.registration ? registration.message || "Guiding from the first plate" : registration.message || "Align to the first plate" : ar.message || (ar.phase === "finding" ? "Locating assembly" : "Approximate 2D guide")} placementPhrase={arWords} instruction={step?.instruction ?? ""} aligning={false} adjusting={ar.adjusting} hasPlacement={!!(basePlacement ? registration.registration : ar.guide?.placement)} onAlign={registration.align} onRescan={() => { ar.rescan(); if (basePlacement) registration.align(); }} onAdjust={() => ar.setAdjusting((v) => !v)} onRotate={(delta) => basePlacement ? editArVisual({ rotation: arRotation + delta }) : ar.setRotation((v) => v + delta)} onReset={() => { editArVisual({ nudge: { x: 0, y: 0 }, rotation: 0 }); if (!basePlacement) ar.resetAdjustment(); }} onReplay={() => editArVisual({ replay: arReplay + 1 })} onHide={() => setArEnabled(false)}>
         {step && step.parts.length > 1 && <div className="mt-2 flex gap-1 overflow-x-auto">{step.parts.map((piece, i) => <button key={i} onClick={() => editArVisual({ partIdx: i })} aria-pressed={arPartIdx === i} className={`shrink-0 rounded-md px-2 py-1 ${arPartIdx === i ? "bg-cyan-300 text-slate-950" : "bg-white/10 text-white"}`}>{i + 1}. {piece.name}</button>)}</div>}
       </ARAssistant>}
 
@@ -1188,7 +1188,7 @@ export default function BuildView() {
 
       {/* target state: the manual's picture of this step (drag to move, corner grip to resize, tap to zoom) */}
       <AnimatePresence>
-        {target && phase.kind === "ready" && (
+        {target && phase.kind === "ready" && !(arEnabled && registration.tapIndex !== null) && (
           <ManualPanel
             key={target.slice(-40)}
             target={target}
@@ -1251,7 +1251,7 @@ export default function BuildView() {
 
       {/* bottom: hologram + step card */}
       {/* above the manual panel (z-25) while a "where am I?" message shows, so it's never hidden */}
-      <div className={`absolute inset-x-0 bottom-0 ${notice ? "z-30" : "z-10"} flex flex-col gap-3 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:bottom-6 sm:left-6 sm:right-auto sm:w-[440px] sm:p-0`}>
+      <div className={`absolute inset-x-0 bottom-0 ${arEnabled && registration.tapIndex !== null ? "hidden" : notice ? "z-30" : "z-10"} flex flex-col gap-3 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:bottom-6 sm:left-6 sm:right-auto sm:w-[440px] sm:p-0`}>
         {/* "where am I?" result (asked for, or an automatic jump) */}
         <AnimatePresence>
           {notice && (

@@ -42,10 +42,11 @@ try {
   await page.getByRole("button", { name: /AR assistant; drag/ }).click();
   assert.match(await page.getByRole("group", { name: "AR assistant" }).textContent(), /3 studs right and 2 studs inward from the first plate/);
   await page.getByRole("button", { name: "Align / Re-align" }).click();
-  await page.getByRole("button", { name: "Tap reference stud A on camera" }).click({ position: { x: 85, y: 290 } });
-  await page.getByRole("button", { name: "Tap reference stud B on camera" }).click({ position: { x: 225, y: 290 } });
+  await page.getByRole("button", { name: "Tap 1: left end stud on the first green plate in the camera" }).click({ position: { x: 85, y: 450 } });
+  await page.getByRole("button", { name: "Tap 2: right end stud on the first green plate in the camera" }).click({ position: { x: 225, y: 450 } });
   const ghost = page.getByLabel("Placement ghost", { exact: true });
   await ghost.waitFor();
+  await page.getByRole("button", { name: "Expand step card" }).click();
   assert.match(await ghost.textContent(), /Step 1: place here/);
   assert.equal(guideCalls, 0, "stored placement does not call Claude");
   const oldGhost = await ghost.elementHandle();

@@ -28,8 +28,8 @@ try {
   await page.getByTestId("ar-toggle").click();
   await page.getByRole("button", { name: /AR assistant; drag/ }).click();
   await page.getByRole("button", { name: "Align / Re-align" }).click();
-  await page.getByRole("button", { name: "Tap reference stud A on camera" }).click({ position: { x: 85, y: 290 } });
-  await page.getByRole("button", { name: "Tap reference stud B on camera" }).click({ position: { x: 225, y: 290 } });
+  await page.getByRole("button", { name: "Tap 1: left end stud on the first green plate in the camera" }).click({ position: { x: 85, y: 450 } });
+  await page.getByRole("button", { name: "Tap 2: right end stud on the first green plate in the camera" }).click({ position: { x: 225, y: 450 } });
   const ghost = page.getByLabel("Placement ghost");
   await ghost.locator("rect").waitFor({ timeout: 5000 });
   assert.match(await ghost.textContent(), /Step 1: place here · 2D guide/);

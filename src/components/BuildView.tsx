@@ -209,11 +209,10 @@ export default function BuildView() {
   const highlight = found && found.key === partKey ? found : null;
   const [attempt, setAttempt] = useState(0); // bumped by Retry to re-read the page
   const [preview, setPreview] = useState<string | null>(null); // page image shown while Claude reads it
-  // "Where am I?" (asked for, or automatic): see findMyPlace and the auto-detect loop below.
+  // Finding the step from the camera, always automatic (no button): see findMyPlace and the auto-detect loop below.
   const [readCount, setReadCount] = useState(0); // pages read so far, in view or in the background
   const [locating, setLocating] = useState(false);
   const [notice, setNotice] = useState<{ text: string; problems?: string[] } | null>(null);
-  const [auto, setAuto] = useState(true); // detect the step from the camera without being asked
   const lastAuto = useRef(0); // when the last automatic check ran
   const lastManual = useRef(0); // when the builder last changed step themselves
   const autoJump = useRef(false); // the next step change is ours, not the builder's
@@ -606,7 +605,6 @@ export default function BuildView() {
     else lastManual.current = Date.now();
   }, [stepKey]);
 
-  const toggleAuto = () => setAuto((a) => !a);
 
   // Automatic detection. Watches a tiny grayscale camera sample on the phone (no network). Once the whole
   // book is read it checks once, then again whenever the build has changed and the scene has held still for
@@ -616,7 +614,7 @@ export default function BuildView() {
     autoState.current = { ready, busy: locating || check?.state === "checking", findMyPlace };
   });
   useEffect(() => {
-    if (!auto || !reader || !doc) return;
+    if (!reader || !doc) return;
     let prev: Uint8ClampedArray | null = null;
     let stillSince = Date.now();
     const timer = setInterval(() => {
@@ -642,7 +640,7 @@ export default function BuildView() {
       st.findMyPlace(true);
     }, 500);
     return () => clearInterval(timer);
-  }, [auto, reader, doc]);
+  }, [reader, doc]);
 
   // The notice fades after a while (problem lists stay longer). Tap to dismiss.
   useEffect(() => {
@@ -1087,20 +1085,10 @@ export default function BuildView() {
                   )}
                 </AnimatePresence>
 
-                <div className="mt-4 flex items-center justify-between gap-3 text-xs">
-                  <button onClick={() => findMyPlace()} disabled={locating} className="font-medium text-sky-300 transition hover:text-sky-200 disabled:opacity-60">
-                    {locating ? "Finding your place…" : "Where am I?"}
-                  </button>
-                  <button
-                    onClick={toggleAuto}
-                    aria-pressed={auto}
-                    title="Find the step from the camera automatically"
-                    className="flex items-center gap-1.5 text-white/60 transition hover:text-white/90"
-                  >
-                    <span className={`h-1.5 w-1.5 rounded-full ${auto ? "bg-emerald-300" : "bg-white/30"}`} />
-                    Auto-detect {auto ? "on" : "off"}
-                  </button>
-                </div>
+                {/* the step is found from the camera automatically; this only shows while a check runs */}
+                <p className={`mt-3 h-4 text-xs text-sky-300/80 transition-opacity ${locating ? "opacity-100" : "opacity-0"}`} aria-live="polite">
+                  {locating ? "Checking where you are…" : ""}
+                </p>
 
                 <div className="mt-3 grid grid-cols-[1fr_1.4fr_1fr] gap-2">
                   <button onClick={() => go(-1)} className="rounded-xl border border-white/15 bg-white/[0.06] py-3 text-sm font-medium text-white/80 transition hover:bg-white/10 active:scale-95">

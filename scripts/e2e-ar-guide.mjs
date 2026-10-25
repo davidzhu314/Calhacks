@@ -12,11 +12,13 @@ const waitCalls = async (n) => { const end = Date.now() + 9000; while (guideCall
 page.on("pageerror", (e) => errors.push(e.message));
 let guideCalls = 0;
 let checkCalls = 0;
+let guideRequest;
+let checkRequest;
 let holdReply = false;
 let releaseReply = () => {};
 let response = { visible: true, status: "absent", confidence: .95, explanation: "Place the piece", assemblyBox: { left: .25, top: .25, right: .75, bottom: .75 }, partBox: { left: .35, top: .35, right: .45, bottom: .45 }, placement: { x: .55, y: .55 }, orientationDegrees: 0 };
-await page.route("**/api/ar-guide", async (route) => { guideCalls++; const reply = response; if (holdReply) await new Promise((resolve) => { releaseReply = resolve; }); await route.fulfill({ json: reply }); });
-await page.route("**/api/check", async (route) => { checkCalls++; await route.fulfill({ json: { can_see: true, step_complete: false, confidence: .9, issues: [{ part: "brick", problem: "misaligned", fix: "Move the brick", box: { x: .2, y: .2, w: .1, h: .1 } }], say: "Keep building" } }); });
+await page.route("**/api/ar-guide", async (route) => { guideCalls++; guideRequest = route.request().postDataJSON(); const reply = response; if (holdReply) await new Promise((resolve) => { releaseReply = resolve; }); await route.fulfill({ json: reply }); });
+await page.route("**/api/check", async (route) => { checkCalls++; checkRequest = route.request().postDataJSON(); await route.fulfill({ json: { can_see: true, step_complete: false, confidence: .9, issues: [{ part: "brick", problem: "misaligned", fix: "Move the brick", box: { x: .2, y: .2, w: .1, h: .1 } }], say: "Keep building" } }); });
 await page.route("**/api/locate", async (route) => route.fulfill({ json: { callout: null, placed: null } }));
 await page.route(/\/api\/(tts|speech-token|where-am-i)/, async (route) => route.abort());
 try {
@@ -93,10 +95,17 @@ try {
   await page.getByTestId("ar-placement").waitFor({ timeout: 10000 });
   const newPlacement = await page.getByTestId("ar-placement").getAttribute("transform");
   assert.notEqual(newPlacement, placement, "new step uses its own grounding result");
+  assert.ok(guideRequest.part && guideRequest.parts?.length, "AR receives the selected part and the full part list");
   await page.getByRole("button", { name: "Check build" }).click();
   await page.waitForFunction(() => document.querySelectorAll('[data-issue-box]').length > 0);
   assert.equal(checkCalls, 1);
-  await page.getByRole("button", { name: "Hide guide" }).click();
+  assert.ok(checkRequest.parts?.length, "the checker receives the same part list");
+  assert.equal(guideRequest.parts[0].description, checkRequest.parts[0].description);
+  await page.getByTestId("ar-placement").waitFor({ state: "hidden" });
+  assert.equal(await page.locator('svg[aria-label="2D AR guide overlay"]').count(), 0, "checking hides the AR overlay so issue boxes remain clear");
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByTestId("ar-placement").waitFor({ timeout: 15000 });
+  await page.getByTestId("ar-toggle").click();
   await page.getByTestId("ar-placement").waitFor({ state: "hidden" });
   assert.match(await page.getByTestId("ar-toggle").innerText(), /AR off/);
   assert.equal(await page.getByTestId("ar-placement").count(), 0);

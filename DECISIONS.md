@@ -182,3 +182,10 @@ The step card used to be keyed to the step, so every step change faded the whole
 - One card for all steps (keyed to the phase only); a step change updates it in place and just fades in the new instruction.
 - Jumps from the strip or from automatic step detection to a page that's already read go straight there, no loading card.
 - A strip that has just appeared jumps to the current step instead of sliding there.
+
+## AR guide and part-aware build checks on ar-akhil
+
+- The AR branch now includes the latest main step-card change and the part-aware checking change from `claude/parts-and-actions`. The demo manual also carries the new visual part descriptions. Other voice-assistant changes from that branch are outside this integration.
+- `/api/check` receives the step's part descriptions to distinguish similar pieces. `/api/ar-guide` now receives those same descriptions, including the full step part list, and asks the model to omit uncertain part boxes and placements.
+- Starting a check clears the old AR anchor. AR pauses and hides while the check or its result is visible; dismissing the result starts a fresh scan. The check result remains the source of truth for step completion and mistake markers.
+- Lint, TypeScript, offline tests, production build, and a mocked mobile browser flow were run after the integration. The browser flow verifies that AR and Check build receive matching part descriptions and that mistake boxes take visual priority. Real-camera model accuracy remains to be tested.

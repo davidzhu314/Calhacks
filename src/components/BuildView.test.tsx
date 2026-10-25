@@ -18,6 +18,7 @@ vi.mock("motion/react", () => ({
   motion: {
     div: ({ children, className }: { children: React.ReactNode; className?: string }) => <div className={className}>{children}</div>,
     section: ({ children, className }: { children: React.ReactNode; className?: string }) => <section className={className}>{children}</section>,
+    h1: ({ children, className }: { children: React.ReactNode; className?: string }) => <h1 className={className}>{children}</h1>,
   },
 }));
 vi.mock("@/components/CameraFeed", async () => {

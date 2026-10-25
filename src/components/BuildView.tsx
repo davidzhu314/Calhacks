@@ -328,8 +328,9 @@ export default function BuildView() {
   const step = steps[stepIdx] as ExtractedStep | undefined;
   const part = step?.parts[0];
   const arPart = step?.parts[arPartIdx] ?? part;
-  const ar = useArGuide({ enabled: arEnabled && phase.kind === "ready" && cameraStatus.state === "ready", key: `${stepKey}-${arPartIdx}`, camera, target: targetKey === stepKey ? target : null, previous, instruction: step?.instruction ?? "", part: arPart?.name ?? "", blocked: browserOpen || check?.state === "checking" });
+  const ar = useArGuide({ enabled: arEnabled && phase.kind === "ready" && cameraStatus.state === "ready", key: `${stepKey}-${arPartIdx}`, camera, target: targetKey === stepKey ? target : null, previous, instruction: step?.instruction ?? "", part: arPart ? describePart(arPart) : "", parts: partLines(step?.parts ?? []), blocked: browserOpen || !!check });
   const invalidateAr = ar.invalidate;
+  const rescanAr = ar.rescan;
   useEffect(() => { // navigation resets the selected guide piece
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setArPartIdx(0);
@@ -652,7 +653,7 @@ export default function BuildView() {
 
   const runCheck = useCallback(async () => {
     if (!step || !target || check?.state === "checking" || browserOpenRef.current) return;
-    invalidateAr();
+    rescanAr();
     const frame = camera.current?.capture();
     const sample = camera.current?.sample() ?? null; // the view at check time, to tell if the camera moves after
     if (!frame) return setCheck({ state: "error", message: "Camera isn't ready yet." });
@@ -684,7 +685,7 @@ export default function BuildView() {
       if (request !== checkRequest.current || browserOpenRef.current) return;
       setCheck({ state: "error", message: e instanceof Error && e.message ? e.message : "Check failed." });
     }
-  }, [step, target, previous, check?.state, muted, go, cancelAdvance, setCheck, invalidateAr]);
+  }, [step, target, previous, check?.state, muted, go, cancelAdvance, setCheck, rescanAr]);
 
   const speakStep = useCallback(() => {
     if (step && !muted) speak(spokenStep(step));
@@ -1025,7 +1026,7 @@ export default function BuildView() {
   return (
     <main className="relative h-dvh w-full overflow-hidden bg-ink text-white">
       <CameraFeed ref={camera} onStatusChange={setCameraStatus} />
-      <ARGuideOverlay camera={camera} phase={ar.phase} guide={ar.guide} message={ar.message} part={arPart} adjusting={ar.adjusting} rotation={ar.rotation} onAdjust={ar.adjust} />
+      <ARGuideOverlay camera={camera} phase={check ? "off" : ar.phase} guide={ar.guide} message={ar.message} part={arPart} adjusting={ar.adjusting} rotation={ar.rotation} onAdjust={ar.adjust} />
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-ink/70 via-transparent to-ink/80" />
       {/* the mistake boxes on the live camera too, while the camera stays where it was for the check */}
       {check?.state === "result" && verdict === "fix" && showBoxes && (
@@ -1082,7 +1083,7 @@ export default function BuildView() {
         </div>
       </header>
 
-      {arEnabled && phase.kind === "ready" && <div className="absolute left-3 top-[14rem] z-20 flex max-w-[min(13rem,55vw)] flex-col gap-1.5 sm:left-6 sm:top-44" aria-label="AR guide controls">
+      {arEnabled && phase.kind === "ready" && !check && <div className="absolute left-3 top-[14rem] z-20 flex max-w-[min(13rem,55vw)] flex-col gap-1.5 sm:left-6 sm:top-44" aria-label="AR guide controls">
         {step && step.parts.length > 1 && <div className="hud-panel !bg-ink/95 flex gap-1 overflow-x-auto rounded-xl p-1">{step.parts.map((p, i) => <button key={i} onClick={() => setArPartIdx(i)} aria-pressed={arPartIdx === i} className={`shrink-0 rounded-lg px-2 py-1.5 text-[11px] ${arPartIdx === i ? "bg-cyan-300 text-ink" : "text-white/80"}`}>{i + 1}. {p.name}</button>)}</div>}
         <div className="hud-panel !bg-ink/95 flex flex-wrap gap-1 rounded-xl border border-white/15 p-1.5 text-[11px] shadow-xl">
           <button onClick={ar.rescan} className="rounded-lg px-2 py-1.5 text-cyan-100 transition hover:bg-cyan-300/15">Rescan</button>

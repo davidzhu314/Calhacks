@@ -6,12 +6,13 @@ import type { ArGuide, ArPoint } from "@/lib/arGuide";
 import { parseGuide } from "@/lib/arGuide";
 import { acceptDetection, isLost, pinPlacement, sceneDelta, type Anchor } from "@/lib/arTracker";
 import { mayGround, responseIsCurrent } from "@/lib/arScheduler";
+import type { PartLine } from "@/lib/parts";
 
 export type GuidePhase = "off" | "finding" | "guiding" | "degraded" | "lost";
-type Input = { enabled: boolean; key: string; camera: RefObject<CameraHandle | null>; target: string | null; previous: string | null; instruction: string; part: string; blocked: boolean };
+type Input = { enabled: boolean; key: string; camera: RefObject<CameraHandle | null>; target: string | null; previous: string | null; instruction: string; part: string; parts: PartLine[]; blocked: boolean };
 const MOVED = .13;
 
-export function useArGuide({ enabled, key, camera, target, previous, instruction, part, blocked }: Input) {
+export function useArGuide({ enabled, key, camera, target, previous, instruction, part, parts, blocked }: Input) {
   const [phase, setPhase] = useState<GuidePhase>("off");
   const [guide, setGuide] = useState<ArGuide | null>(null);
   const [adjusting, setAdjusting] = useState(false);
@@ -26,8 +27,8 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
   const lastRequest = useRef(0);
   const due = useRef(false);
   const activeKey = useRef(key);
-  const current = useRef({ enabled, key, target, previous, instruction, part, blocked });
-  useEffect(() => { current.current = { enabled, key, target, previous, instruction, part, blocked }; }, [enabled, key, target, previous, instruction, part, blocked]);
+  const current = useRef({ enabled, key, target, previous, instruction, part, parts, blocked });
+  useEffect(() => { current.current = { enabled, key, target, previous, instruction, part, parts, blocked }; }, [enabled, key, target, previous, instruction, part, parts, blocked]);
   useEffect(() => () => { requestId.current++; }, []);
 
   useEffect(() => {
@@ -59,7 +60,7 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
       const id = ++requestId.current;
       const requestKey = state.key;
       setPhase(anchor.current ? "degraded" : "finding");
-      void fetch("/api/ar-guide", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ frame, expected: state.target, previous: state.previous ?? undefined, instruction: state.instruction, part: state.part }) })
+      void fetch("/api/ar-guide", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ frame, expected: state.target, previous: state.previous ?? undefined, instruction: state.instruction, part: state.part, parts: state.parts }) })
         .then(async (res) => { const data = await res.json(); if (!res.ok) throw new Error(data.error || "Could not locate assembly."); return parseGuide(data); })
         .then((result) => {
           if (!responseIsCurrent({ key: requestKey, id }, { key: activeKey.current, id: requestId.current, enabled: current.current.enabled, blocked: current.current.blocked })) return;

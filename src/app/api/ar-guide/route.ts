@@ -1,6 +1,7 @@
 import { askClaude, ClaudeError, type Part } from "@/lib/claude";
 import { firstJsonObject } from "@/lib/json";
 import { parseGuide } from "@/lib/arGuide";
+import { LOOKALIKE_RULE, partsPrompt, readPartLines } from "@/lib/parts";
 
 const MAX_IMAGE_CHARS = 4_000_000;
 const image = (v: unknown): v is string => typeof v === "string" && /^data:image\/(jpeg|png|webp|gif);base64,/i.test(v) && v.length <= MAX_IMAGE_CHARS;
@@ -28,7 +29,8 @@ export async function POST(request: Request) {
   if (previous) parts.push({ type: "text", text: "PREVIOUS manual state:" }, { type: "image", dataUrl: previous });
   parts.push({ type: "text", text: "CURRENT manual step:" }, { type: "image", dataUrl: expected }, { type: "text", text: "CAMERA photo:" }, { type: "image", dataUrl: frame });
   const hint = manualHint && typeof manualHint === "object" ? JSON.stringify(manualHint).slice(0, 500) : "";
-  parts.push({ type: "text", text: `Instruction: ${instruction}\nRequired part: ${part}${hint ? `\nHint: ${hint} is a position in the MANUAL drawing, NOT the camera.` : ""}` });
+  const stepParts = readPartLines(body.parts);
+  parts.push({ type: "text", text: `Instruction: ${instruction}\nRequired part: ${part}${stepParts.length ? `\nAll parts in this step:\n${partsPrompt(stepParts)}\n${LOOKALIKE_RULE} Box only the required part; if unsure which piece it is, omit the part box and placement.` : ""}${hint ? `\nHint: ${hint} is a position in the MANUAL drawing, NOT the camera.` : ""}` });
   const started = Date.now();
   try {
     const reply = await askClaude({ system: SYSTEM, parts });

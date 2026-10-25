@@ -84,36 +84,36 @@ Reference repos (inspiration only; write original TypeScript; check each license
 ## Todo Checklist
 
 ### Investigation
-- [ ] `git checkout -b ar-guide`; `npm ci`; baseline `npm run lint`, `npm test`, `npm run build` (stub fonts only if offline, restore after)
-- [ ] Read the Next.js docs relevant to route handlers/client components in `node_modules/next/dist/docs/`
-- [ ] Re-read `BuildView.tsx`, `CameraFeed.tsx`, `Hologram.tsx`, `locate/route.ts`, `check/route.ts`, `issues.ts`, `prebuilt.ts`, `public/steps/6455750.json`; confirm the pitfalls against the real code
-- [ ] Skim the Bluebook/AR-Vision files named in the brief and their LICENSE if reachable; log what concepts you adapted
-- [ ] Record the architecture (spaces, build frame, registration, state machine, assistant) in Notes
+- [x] `git checkout -b ar-guide`; `npm ci`; baseline `npm run lint`, `npm test`, `npm run build` (stub fonts only if offline, restore after)
+- [x] Read the Next.js docs relevant to route handlers/client components in `node_modules/next/dist/docs/`
+- [x] Re-read `BuildView.tsx`, `CameraFeed.tsx`, `Hologram.tsx`, `locate/route.ts`, `check/route.ts`, `issues.ts`, `prebuilt.ts`, `public/steps/6455750.json`; confirm the pitfalls against the real code
+- [x] Skim the Bluebook/AR-Vision files named in the brief and their LICENSE if reachable; log what concepts you adapted
+- [x] Record the architecture (spaces, build frame, registration, state machine, assistant) in Notes
 
 ### Implementation: Part A (required)
-- [ ] `src/lib/arGeometry.ts` (`coverMap`, `frameToScreen`, `screenToFrame`, visibility, `clampToBox`)
-- [ ] `src/lib/buildFrame.ts` (types, `footprintCells`) and `src/lib/placements.ts` loader
-- [ ] `src/lib/registration.ts` (two-point similarity, apply/invert, pitch/rotation, degeneracy)
-- [ ] `public/steps/6455750.placements.json` for >= first 15 steps (agent-estimated, listed in Notes for human review) and optional `?placementDebug=1` footprint view
-- [ ] `src/lib/patchTracker.ts` (pure grayscale patch search + quality + lost logic) and the tracker loop (interval, paused when hidden/off)
-- [ ] `src/lib/arGuide.ts` + `src/app/api/ar-guide/route.ts` (`ground` and `fine` modes, strict validation, coarse-to-fine, statuses, no placement unless assembly clearly visible)
-- [ ] `CameraFeed` geometry + small grayscale frame access (keep `capture`)
-- [ ] `ARGuideOverlay.tsx` + `PlacementGhost` (snapped translucent footprint, studs, colors, "2D guide" label, dashed for approximate, reduced-motion)
-- [ ] Two-tap "Align guide" flow with the inline diagram; Re-align
-- [ ] Animations: pick pulse, fly path, press-in ripple, rotation, success pulse, Replay, loop limit, 30 fps cap, reduced-motion fallback
-- [ ] `ARAssistant.tsx`: draggable orb/panel with all behaviors in Design item 12 (thresholded drag, clamping, safe-area, snap-to-edge, persisted position with try/catch, keyboard, no conflict with the swipe sheet/voice pill)
-- [ ] Adjust placement: drag/rotate ghost -> per-step nudge in build coordinates; Reset adjustment; Rescan; Hide guide
-- [ ] Guide state machine + scheduler (one in-flight, throttle, request ids, per-step cache, clear on `stepKey` change), `runCheck` concurrency rules, header "AR Guide" toggle
-- [ ] Lost-target recovery: amber state + "Guide lost alignment — rescan or tap to position."; Re-align/Rescan recovers without changing the step
-- [ ] Defensive checks: no camera frame, `visible:false`, no placement, ambiguous part, tiny/huge boxes, request errors (amber "Couldn't locate, tap to position"), registration degenerate, missing placements file
+- [x] `src/lib/arGeometry.ts` (`coverMap`, `frameToScreen`, `screenToFrame`, visibility, `clampToBox`)
+- [x] `src/lib/buildFrame.ts` (types, `footprintCells`) and `src/lib/placements.ts` loader
+- [x] `src/lib/registration.ts` (two-point similarity, apply/invert, pitch/rotation, degeneracy)
+- [x] `public/steps/6455750.placements.json` for >= first 15 steps (agent-estimated, listed in Notes for human review) and optional `?placementDebug=1` footprint view
+- [x] `src/lib/patchTracker.ts` (pure grayscale patch search + quality + lost logic) and the tracker loop (interval, paused when hidden/off)
+- [x] `src/lib/arGuide.ts` + `src/app/api/ar-guide/route.ts` (`ground` and `fine` modes, strict validation, coarse-to-fine, statuses, no placement unless assembly clearly visible)
+- [x] `CameraFeed` geometry + small grayscale frame access (keep `capture`)
+- [x] `ARGuideOverlay.tsx` + `PlacementGhost` (snapped translucent footprint, studs, colors, "2D guide" label, dashed for approximate, reduced-motion)
+- [x] Two-tap "Align guide" flow with the inline diagram; Re-align
+- [x] Animations: pick pulse, fly path, press-in ripple, rotation, success pulse, Replay, loop limit, 30 fps cap, reduced-motion fallback
+- [x] `ARAssistant.tsx`: draggable orb/panel with all behaviors in Design item 12 (thresholded drag, clamping, safe-area, snap-to-edge, persisted position with try/catch, keyboard, no conflict with the swipe sheet/voice pill)
+- [x] Adjust placement: drag/rotate ghost -> per-step nudge in build coordinates; Reset adjustment; Rescan; Hide guide
+- [x] Guide state machine + scheduler (one in-flight, throttle, request ids, per-step cache, clear on `stepKey` change), `runCheck` concurrency rules, header "AR Guide" toggle
+- [x] Lost-target recovery: amber state + "Guide lost alignment — rescan or tap to position."; Re-align/Rescan recovers without changing the step
+- [x] Defensive checks: no camera frame, `visible:false`, no placement, ambiguous part, tiny/huge boxes, request errors (amber "Couldn't locate, tap to position"), registration degenerate, missing placements file
 
 ### Implementation: Part B (optional, only after Part A validation passes)
 - [ ] Pseudo-3D ghost: reuse `Hologram` geometry in a transparent, top-down orthographic three.js canvas matched to `pitchPx`; capped fps; falls back to the SVG ghost; labeled 2D guide
 - [ ] Four-corner homography work-mat calibration (`src/lib/homography.ts`: 4-point DLT, 8x8 solve with partial pivoting, apply/invert, degenerate detection); plane-only, labeled as such; invalidated by large camera movement
 
 ### Validation
-- [ ] Run `npm run lint` and fix issues in touched files
-- [ ] Run `npx tsc --noEmit` (ignore the pre-existing `LayoutProps` error from `layout.tsx` if present; it is generated by `next build`)
+- [x] Run `npm run lint` and fix issues in touched files
+- [x] Run `npx tsc --noEmit` (ignore the pre-existing `LayoutProps` error from `layout.tsx` if present; it is generated by `next build`)
 - [ ] Run `npm test` and ensure all pass. Add node:test files in `scripts/` (copy `scripts/commands.test.mjs` style: import `.ts` sources with explicit extensions, pure modules only, no enums):
   - [ ] `arGeometry`: `object-cover` for portrait video in a 390x844 box, landscape video in a portrait box, box wider than video; round trip `screenToFrame(frameToScreen(p)) == p`; cropped-out points invisible; rotation (swapped dims); `clampToBox` keeps a 56 px orb inside the box with insets, handles box smaller than element
   - [ ] `registration`: two known correspondences reproduce both points; a third known point maps correctly (rotated 30 degrees, scaled, translated); `invert(apply)` round trip; pixel (not normalized) math with a non-square frame; degenerate taps rejected; `translate` shifts correctly
@@ -134,16 +134,16 @@ Reference repos (inspiration only; write original TypeScript; check each license
   - [ ] Check build with a failing mocked `/api/check` (two boxed issues): existing numbered amber boxes render on the frozen photo only, not on the live video; the assistant collapses and nothing overlaps the header on 390x844; AR and error overlays coexist
   - [ ] `prefers-reduced-motion: reduce`: ghost/assistant animations are `none`, ghost still visible
   - [ ] landscape 844x390: overlay and assistant re-map correctly after rotation
-- [ ] Run `npm run build` and ensure it succeeds (stub Google Fonts only if offline, restore `layout.tsx`, confirm with `git diff`)
+- [x] Run `npm run build` and ensure it succeeds (stub Google Fonts only if offline, restore `layout.tsx`, confirm with `git diff`)
 - [ ] Regression checks via tests/run: Back/Next/Check build, voice commands (`npm test` matcher tests), part-chip highlight, hologram, phone swipe sheet (still draggable, not stolen by the assistant), voice panel, existing error boxes
 - [ ] Performance checks in the e2e run: bounded `/api/ar-guide` calls, tracker/animation loops stop when AR is off, tab hidden, or after navigating to the Hub; no console errors; no leaked timers
 
 ### Cleanup
 - [ ] Remove debug code and test hooks; ensure `layout.tsx` is restored; screenshots git-ignored
-- [ ] Update `DECISIONS.md`: architecture (build frame vs registration, two-tap similarity transform, patch tracking, coarse-to-fine grounding, state machine), why placements are stored in studs, assistant design, inspiration sources + licenses, capabilities, hardware/browser limitations (iOS Safari, rotation, camera aspect), performance observations, remaining accuracy limits (2D only, no depth/pose, build rotation not tracked, elevated parts and perspective error, agent-estimated placements need human review), why markers/3D were not built
-- [ ] Add an "AR Guide" blurb and the test commands to `README.md`
-- [ ] State clearly in `DECISIONS.md` and the final summary that real-phone alignment and placement correctness were NOT verified by the agent; list the human checks (ghost lands on the right studs for steps 1-15, rotation, glare/low light, bumping the stand, dragging the assistant with a thumb on a real iPhone)
-- [ ] Final validation: `npm run lint && npm test && npm run build`, then run the e2e once more
+- [x] Update `DECISIONS.md`: architecture (build frame vs registration, two-tap similarity transform, patch tracking, coarse-to-fine grounding, state machine), why placements are stored in studs, assistant design, inspiration sources + licenses, capabilities, hardware/browser limitations (iOS Safari, rotation, camera aspect), performance observations, remaining accuracy limits (2D only, no depth/pose, build rotation not tracked, elevated parts and perspective error, agent-estimated placements need human review), why markers/3D were not built
+- [x] Add an "AR Guide" blurb and the test commands to `README.md`
+- [x] State clearly in `DECISIONS.md` and the final summary that real-phone alignment and placement correctness were NOT verified by the agent; list the human checks (ghost lands on the right studs for steps 1-15, rotation, glare/low light, bumping the stand, dragging the assistant with a thumb on a real iPhone)
+- [x] Final validation: `npm run lint && npm test && npm run build`, then run the e2e once more
 
 ## Definition of Done
 - Modules exist and are wired into `BuildView.tsx` behind a header "AR Guide" toggle at 390x844: `src/lib/arGeometry.ts`, `buildFrame.ts`, `placements.ts`, `registration.ts`, `patchTracker.ts`, `arGuide.ts`, `src/app/api/ar-guide/route.ts`, `src/components/ARGuideOverlay.tsx`, `ARAssistant.tsx`, and `public/steps/6455750.placements.json` (>= 15 steps).
@@ -164,6 +164,8 @@ Architecture so far: build frame stores stud offsets and footprints; two tapped 
 Reference convention: first green half-circle plate, A and B are the left and right end studs along its straight edge, seven pitches apart. All first-15 entries in `6455750.placements.json` are `agent-estimated` and need visual review. Steps 7-9 (tower) and 12-15 (flower) are detached subassemblies; their own `ref` prevents misleading projection onto the first plate. Steps 1-6 and 10-11 are base-referenced but still need correction by a person looking at the physical build.
 
 Human checks remaining: real iPhone alignment and thumb dragging, correct stud footprints for steps 1-15, rotation, glare and low light, stand bumps, and landscape safe areas. Patch tracking is translation only. Single-view 2D cannot establish depth or part height. Part B is unbuilt.
+
+Second milestone: fallback `ground`/`fine` modes are sequential and the fine pass uses a zoomed camera crop with a 10-percent grid. A detached step's browser test makes exactly two mocked guide calls; a rescan with `visible:false` adds one call and clears markers. The test also exercises two-tap projection, a dragged stud nudge, assistant drag/keyboard/persistence, rotation, reduced motion, and the existing check boxes. Short CSS animations run twice and stop; there is no ongoing rAF loop to cap. Edge snapping is optional and was not added. The current root GitHub listings for Bluebook and AR-Vision show no LICENSE file; only conceptual separation of grounding/tracking and calibration was adapted, with original TypeScript.
 
 Assumptions already made by the spec author (review after the run):
 - "AR assistant" = the on-screen floating assistant (orb/panel with status and controls). The ghost is separately draggable in Adjust mode.

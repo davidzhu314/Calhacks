@@ -15,7 +15,9 @@ vi.mock("next/link", () => ({ default: ({ children, href }: { children: React.Re
 vi.mock("next/dynamic", () => ({ default: () => () => <div data-testid="hologram" /> }));
 vi.mock("motion/react", () => ({
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useReducedMotion: () => true,
   motion: {
+    g: ({ children }: { children: React.ReactNode }) => <g>{children}</g>,
     div: ({ children, className }: { children: React.ReactNode; className?: string }) => <div className={className}>{children}</div>,
     section: ({ children, className }: { children: React.ReactNode; className?: string }) => <section className={className}>{children}</section>,
     h1: ({ children, className }: { children: React.ReactNode; className?: string }) => <h1 className={className}>{children}</h1>,

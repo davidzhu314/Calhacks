@@ -24,6 +24,16 @@ export function visibleInCover(point: Point, map: CoverMap): boolean {
   return p.x >= 0 && p.x <= map.boxW && p.y >= 0 && p.y <= map.boxH;
 }
 
-export function clampToBox(point: Point, box: Box): Point {
-  return { x: Math.min(box.right, Math.max(box.left, point.x)), y: Math.min(box.bottom, Math.max(box.top, point.y)) };
+export function clampToBox(point: Point, box: Box): Point;
+export function clampToBox(point: Point, size: Point, box: Box, insets?: { top?: number; right?: number; bottom?: number; left?: number }): Point;
+export function clampToBox(point: Point, sizeOrBox: Point | Box, box?: Box, insets: { top?: number; right?: number; bottom?: number; left?: number } = {}): Point {
+  if (!box) {
+    const area = sizeOrBox as Box;
+    return { x: Math.min(area.right, Math.max(area.left, point.x)), y: Math.min(area.bottom, Math.max(area.top, point.y)) };
+  }
+  const size = sizeOrBox as Point;
+  const left = box.left + (insets.left ?? 0), top = box.top + (insets.top ?? 0);
+  const right = Math.max(left, box.right - (insets.right ?? 0) - size.x);
+  const bottom = Math.max(top, box.bottom - (insets.bottom ?? 0) - size.y);
+  return { x: Math.min(right, Math.max(left, point.x)), y: Math.min(bottom, Math.max(top, point.y)) };
 }

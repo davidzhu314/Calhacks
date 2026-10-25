@@ -9,8 +9,17 @@ const context = await browser.newContext({ viewport: { width: 390, height: 844 }
 const page = await context.newPage();
 const errors = [];
 let guideCalls = 0, checkCalls = 0;
+let guideVisible = true;
 page.on("pageerror", (e) => errors.push(e.message));
-await page.route("**/api/ar-guide", async (route) => { guideCalls++; await route.fulfill({ json: { visible: false, status: "absent", confidence: .8, explanation: "No build", orientationDegrees: null } }); });
+await page.route("**/api/ar-guide", async (route) => {
+  guideCalls++;
+  const mode = route.request().postDataJSON().mode;
+  await route.fulfill({ json: !guideVisible
+    ? { visible: false, status: "absent", confidence: .9, explanation: "Move the camera over the build", orientationDegrees: null }
+    : mode === "fine"
+    ? { visible: true, confidence: .93, explanation: "Approximate attachment", placement: { x: .5, y: .5 }, orientationDegrees: 0 }
+    : { visible: true, status: "present", confidence: .93, explanation: "Assembly located", assemblyBox: { left: .25, top: .25, right: .75, bottom: .75 }, partBox: { left: .35, top: .35, right: .45, bottom: .45 }, placement: null, orientationDegrees: 0 } });
+});
 await page.route("**/api/check", async (route) => { checkCalls++; await route.fulfill({ json: { can_see: true, step_complete: false, confidence: .9, issues: [{ part: "brick", problem: "misaligned", fix: "Move the brick", box: { x: .2, y: .2, w: .1, h: .1 } }], say: "Keep building" } }); });
 await page.route("**/api/locate", async (route) => route.fulfill({ json: { callout: null, placed: null } }));
 await page.route(/\/api\/(tts|speech-token|where-am-i)/, async (route) => route.abort());
@@ -33,11 +42,46 @@ try {
   assert.equal(guideCalls, 0, "stored placement needs no model call");
   assert.equal(checkCalls, 0);
   assert.equal(await page.locator('svg[aria-label="2D guide ghost"] text').textContent(), "2D guide · check manual");
+  const ghost = page.locator('svg[aria-label="2D guide ghost"] > g');
+  const mapped = (await ghost.getAttribute("transform")).match(/translate\(([-\d.]+) ([-\d.]+)\)/);
+  assert.ok(mapped && Math.abs(Number(mapped[1]) - 145) < 2 && Math.abs(Number(mapped[2]) - 330) < 2, "two camera taps project the stored stud offset through object-cover");
+  const beforeDrag = await ghost.getAttribute("transform");
+  await page.getByRole("button", { name: /AR assistant; drag/ }).click();
+  await page.getByRole("button", { name: "Adjust ghost" }).click();
+  const box = await ghost.locator("rect").boundingBox();
+  assert.ok(box, "ghost is visible");
+  const fromX = box.x + box.width / 2, fromY = box.y + box.height / 2;
+  await page.mouse.move(fromX, fromY);
+  await page.mouse.down();
+  await page.mouse.move(fromX + 34, fromY + 20, { steps: 4 });
+  await page.mouse.up();
+  const afterDrag = await ghost.getAttribute("transform");
+  assert.notEqual(afterDrag, beforeDrag, "dragging nudges the ghost in stud coordinates");
+  assert.equal(await page.locator("[aria-label='All steps'] [aria-current='step']").first().getAttribute("aria-label"), stepBefore, "dragging cannot complete a step");
   await page.screenshot({ path: "/tmp/buildsight-ar-guide-v2-mobile.png" });
+  const handle = page.getByRole("button", { name: /AR assistant; drag/ });
+  const orbBefore = await handle.boundingBox();
+  await page.mouse.move(orbBefore.x + 24, orbBefore.y + 24);
+  await page.mouse.down();
+  await page.mouse.move(370, 86, { steps: 5 });
+  await page.mouse.up();
+  const orbAfter = await handle.boundingBox();
+  assert.ok(orbAfter.x > orbBefore.x && orbAfter.x >= 0 && orbAfter.x + orbAfter.width <= 390 && orbAfter.y >= 0, "assistant drag moves and clamps the orb");
+  await handle.focus();
+  await page.keyboard.press("ArrowLeft");
+  const orbNudged = await handle.boundingBox();
+  assert.ok(orbNudged.x < orbAfter.x, "arrow key nudges the assistant");
+  assert.ok(await page.evaluate(() => localStorage.getItem("buildsight:ar-assistant:portrait")), "assistant position is saved");
   await page.getByRole("button", { name: "Go to step 2" }).first().click();
   await page.getByRole("heading", { name: /Attach the second green half-circle/ }).waitFor();
   await page.locator('svg[aria-label="2D guide ghost"] rect').waitFor();
   assert.equal(guideCalls, 0, "later stored step reuses registration without model call");
+  assert.equal(await ghost.evaluate((node) => getComputedStyle(node).animationName), "none", "reduced motion keeps the ghost static");
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.waitForFunction(() => document.querySelector('svg[aria-label="2D guide ghost"]')?.getAttribute("viewBox") === "0 0 844 390");
+  const orb = await page.getByRole("button", { name: /AR assistant; drag/ }).boundingBox();
+  assert.ok(orb && orb.x >= 0 && orb.y >= 0 && orb.x + orb.width <= 844 && orb.y + orb.height <= 390, "assistant remains on screen after rotation");
+  await page.setViewportSize({ width: 390, height: 844 });
   const stepAfter = await page.locator("[aria-label='All steps'] [aria-current='step']").first().getAttribute("aria-label");
   assert.notEqual(stepAfter, stepBefore);
   await page.getByTestId("ar-toggle").click();
@@ -48,8 +92,31 @@ try {
   await page.waitForFunction(() => document.querySelectorAll("[data-issue-box]").length > 0);
   assert.equal(checkCalls, 1);
   assert.equal(guideCalls, 0);
+  await page.evaluate(async () => {
+    const db = await new Promise((resolve, reject) => { const req = indexedDB.open("keyval-store", 1); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
+    await new Promise((resolve, reject) => { const tx = db.transaction("keyval", "readwrite"); tx.objectStore("keyval").put({ id: "t2", source: "lego", title: "Detached assembly test", subtitle: "Local", pdfPath: "/manual-pdf/lego/6455750.pdf", page: 8, stepIdx: 1, addedAt: Date.now(), openedAt: Date.now() }, "manual:t2"); tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); });
+    db.close();
+  });
+  await page.goto(`${base}/build/t2`);
+  await page.getByTestId("ar-toggle").waitFor();
+  await page.getByRole("heading", { name: /axle|connector|tower/i }).first().waitFor({ timeout: 20000 });
+  await page.getByTestId("ar-toggle").click();
+  await page.getByTestId("ar-placement").waitFor({ timeout: 15000 });
+  assert.equal(guideCalls, 2, "detached step uses one coarse and one fine camera request");
+  assert.match(await page.getByTestId("ar-placement").textContent(), /APPROX\. 2D GUIDE/);
+  guideVisible = false;
+  await page.getByRole("button", { name: /AR assistant; drag/ }).click();
+  await page.getByRole("button", { name: "Rescan" }).click();
+  await page.getByText("Build not in view").waitFor({ timeout: 15000 });
+  assert.equal(await page.getByTestId("ar-placement").count(), 0, "invisible assembly has no placement marker");
+  assert.equal(guideCalls, 3, "rescan makes one bounded request");
+  await page.waitForTimeout(4200);
+  assert.equal(guideCalls, 3, "an unchanged failed view does not trigger another model call");
+  await page.getByTestId("ar-toggle").click();
+  await page.getByRole("link", { name: /Hub/ }).first().click();
+  assert.equal(guideCalls, 3, "leaving the build does not start grounding");
   assert.deepEqual(errors, []);
-  console.log(`AR v2 browser test passed: ${guideCalls} guide calls on stored steps, ${checkCalls} check`);
+  console.log(`AR v2 browser test passed: 0 guide calls on stored steps; ${guideCalls} for detached fallback; ${checkCalls} check`);
 } finally {
   await browser.close();
 }

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import type { CameraHandle } from "./CameraFeed";
-import { extractPatch, trackPatch, type Patch } from "@/lib/patchTracker";
+import { bestPatchOnSegment, trackPatch, type Patch } from "@/lib/patchTracker";
 import { registerTwoPoints, shiftRegistration, type Registration } from "@/lib/registration";
 import type { Point } from "@/lib/arGeometry";
 
@@ -33,13 +33,11 @@ export function useBuildRegistration(camera: RefObject<CameraHandle | null>, ena
     if (!result) { first.current = null; setTapIndex(0); setMessage("Those taps were too close or too far apart. Tap stud A again."); return; }
     const frame = camera.current?.trackFrame();
     if (frame) {
-      const x = (first.current.x + pixel.x) / 2 / size.w * frame.width;
-      const y = (first.current.y + pixel.y) / 2 / size.h * frame.height;
-      patch.current = extractPatch(frame, x, y, 17);
+      patch.current = bestPatchOnSegment(frame, first.current.x / size.w * frame.width, first.current.y / size.h * frame.height, pixel.x / size.w * frame.width, pixel.y / size.h * frame.height);
       trackPosition.current = patch.current ? { x: patch.current.x, y: patch.current.y } : null;
     }
     bad.current = 0; current.current = result; setRegistration(result); setTapIndex(null);
-    setMessage("Aligned to the first plate. Check the ghost against the manual.");
+    setMessage(patch.current ? "Aligned to the first plate. Check the ghost against the manual." : "Aligned. Tracking needs more visual detail; re-align if the build moves.");
   }, [camera, points]);
 
   useEffect(() => {
@@ -51,7 +49,7 @@ export function useBuildRegistration(camera: RefObject<CameraHandle | null>, ena
       if (!frame || !size) return;
       const found = trackPatch(patch.current, frame, trackPosition.current.x, trackPosition.current.y, 7);
       if (!found.reliable) {
-        if (++bad.current >= 4) { patch.current = null; current.current = null; setRegistration(null); setMessage("Guide lost alignment — re-align to the first plate."); }
+        if (++bad.current >= 4) { patch.current = null; current.current = null; setRegistration(null); setMessage("Guide lost alignment — rescan or tap to position. Re-align to the first plate."); }
         return;
       }
       bad.current = 0;

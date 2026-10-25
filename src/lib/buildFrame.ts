@@ -22,6 +22,8 @@ export function footprintCells(p: Placement): Stud[] {
   return cells;
 }
 
+export function sameCell(a: Stud, b: Stud): boolean { return a.x === b.x && a.y === b.y; }
+
 export function validPlacement(value: unknown): value is Placement {
   if (!value || typeof value !== "object") return false;
   const p = value as Partial<Placement>;

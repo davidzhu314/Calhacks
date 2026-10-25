@@ -33,3 +33,14 @@ export function parseGuide(raw: unknown): ArGuide | null {
   if (confidence >= .7 && number(r.orientationDegrees)) result.orientationDegrees = r.orientationDegrees;
   return result;
 }
+
+/** Fine mode receives a crop, so its point is normalized within that crop. */
+export function parseFineGuide(raw: unknown): ArGuide | null {
+  const r = record(raw);
+  if (!r || typeof r.visible !== "boolean" || !number(r.confidence)) return null;
+  const result: ArGuide = { visible: r.visible, status: r.visible ? "future-placement" : "absent", confidence: clamp(r.confidence), explanation: typeof r.explanation === "string" ? r.explanation.slice(0, 240) : "", orientationDegrees: null };
+  if (!result.visible || result.confidence < .55) return result;
+  result.placement = point(r.placement);
+  if (number(r.orientationDegrees)) result.orientationDegrees = r.orientationDegrees;
+  return result;
+}

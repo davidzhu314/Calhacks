@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import type { CameraHandle } from "./CameraFeed";
 import type { ArGuide, ArPoint } from "@/lib/arGuide";
 import { parseGuide } from "@/lib/arGuide";
+import { parseFineGuide } from "@/lib/arGuide";
+import { cropAssembly, cropPointToFrame } from "@/lib/arCrop";
 import { acceptDetection, isLost, pinPlacement, sceneDelta, type Anchor } from "@/lib/arTracker";
 import { mayGround, responseIsCurrent, viewReadyForRetry } from "@/lib/arScheduler";
 import type { PartLine } from "@/lib/parts";
@@ -26,6 +28,7 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
   const candidate = useRef<ArGuide | null>(null);
   const requestId = useRef(0);
   const busy = useRef(false);
+  const noFrameCount = useRef(0);
   const lastRequest = useRef(0);
   const due = useRef(false);
   const activeKey = useRef(key);
@@ -57,7 +60,11 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
       const state = current.current;
       if (!mayGround({ enabled: state.enabled, blocked: state.blocked, hidden: document.hidden, ready: !!state.target && !!state.part, due: due.current, busy: busy.current, now: Date.now(), lastRequest: lastRequest.current })) return;
       const frame = camera.current?.capture("detail");
-      if (!frame) return;
+      if (!frame) {
+        if (++noFrameCount.current === 8) { setPhase("degraded"); setMessage("Camera frame unavailable. Check camera permission or refresh."); }
+        return;
+      }
+      noFrameCount.current = 0;
       const requestView = camera.current?.sample() ?? null;
       due.current = false;
       busy.current = true;
@@ -65,8 +72,23 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
       const id = ++requestId.current;
       const requestKey = state.key;
       setPhase(anchor.current ? "degraded" : "finding");
-      void fetch("/api/ar-guide", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ frame, expected: state.target, previous: state.previous ?? undefined, instruction: state.instruction, part: state.part, parts: state.parts }) })
+      void fetch("/api/ar-guide", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "ground", frame, expected: state.target, previous: state.previous ?? undefined, instruction: state.instruction, part: state.part, parts: state.parts }) })
         .then(async (res) => { const data = await res.json(); if (!res.ok) throw new Error(data.error || "Could not locate assembly."); return parseGuide(data); })
+        .then(async (coarse) => {
+          if (!coarse?.visible || !coarse.assemblyBox || coarse.demo || coarse.confidence < .65) return coarse;
+          if (!responseIsCurrent({ key: requestKey, id }, { key: activeKey.current, id: requestId.current, enabled: current.current.enabled, blocked: current.current.blocked })) return coarse;
+          try {
+            const crop = await cropAssembly(frame, coarse.assemblyBox);
+            const res = await fetch("/api/ar-guide", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "fine", frame: crop.image, expected: state.target, previous: state.previous ?? undefined, instruction: state.instruction, part: state.part, parts: state.parts }) });
+            if (!res.ok) return coarse;
+            const fine = parseFineGuide(await res.json());
+            if (!fine?.visible || !fine.placement) return coarse;
+            const placement = cropPointToFrame(fine.placement, crop.bounds);
+            const b = coarse.assemblyBox;
+            if (placement.x < b.left - .1 || placement.x > b.right + .1 || placement.y < b.top - .1 || placement.y > b.bottom + .1) return coarse;
+            return { ...coarse, placement, orientationDegrees: fine.orientationDegrees ?? coarse.orientationDegrees };
+          } catch { return coarse; }
+        })
         .then((result) => {
           if (!responseIsCurrent({ key: requestKey, id }, { key: activeKey.current, id: requestId.current, enabled: current.current.enabled, blocked: current.current.blocked })) return;
           if (!result) throw new Error("Guide response was invalid.");
@@ -102,7 +124,7 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
           if (!responseIsCurrent({ key: requestKey, id }, { key: activeKey.current, id: requestId.current, enabled: current.current.enabled, blocked: current.current.blocked })) return;
           due.current = false;
           setPhase("degraded");
-          setMessage(error instanceof Error ? error.message : "Could not locate assembly. Tap to position.");
+          setMessage(`Couldn't locate, tap to position. ${error instanceof Error ? error.message : "Try a clearer view."}`);
         })
         .finally(() => { busy.current = false; });
     }, 250);

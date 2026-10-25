@@ -17,6 +17,19 @@ export function extractPatch(frame: GrayFrame, cx: number, cy: number, size = 13
   return { pixels, width, height, x, y, texture: Math.sqrt(variance / pixels.length) };
 }
 
+/** Prefer the most textured crop along the first plate's tapped edge. */
+export function bestPatchOnSegment(frame: GrayFrame, ax: number, ay: number, bx: number, by: number): Patch | null {
+  const length = Math.hypot(bx - ax, by - ay);
+  if (length < 3) return null;
+  const nx = -(by - ay) / length, ny = (bx - ax) / length;
+  let best: Patch | null = null;
+  for (const t of [.2, .4, .6, .8]) for (const offset of [-4, 0, 4]) {
+    const patch = extractPatch(frame, ax + (bx - ax) * t + nx * offset, ay + (by - ay) * t + ny * offset, 13);
+    if (patch && (!best || patch.texture > best.texture)) best = patch;
+  }
+  return best && best.texture >= 7 ? best : null;
+}
+
 /** Bounded SAD search. High score is a closer match; flat patches are rejected. */
 export function trackPatch(patch: Patch, frame: GrayFrame, expectedX = patch.x, expectedY = patch.y, radius = 8): TrackResult {
   if (patch.texture < 7 || frame.pixels.length !== frame.width * frame.height) return { x: expectedX, y: expectedY, score: 0, reliable: false };

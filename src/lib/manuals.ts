@@ -14,6 +14,7 @@ export type Manual = {
   pdfPath?: string; // same-origin path for lego/ikea (see next.config rewrites); uploads use stored bytes
   pageCount?: number;
   page: number; // page the builder is on (1-based)
+  stepIdx?: number; // exact active step on the page; absent in older saved manuals
   addedAt: number;
   openedAt: number;
 };

@@ -13,6 +13,7 @@ import CameraFeed, { type CameraHandle } from "@/components/CameraFeed";
 import PieceHologram from "@/components/PieceHologram";
 import { cutOutPiece, type Cutout } from "@/lib/cutout";
 import ManualPanel from "@/components/ManualPanel";
+import StepBrowser from "@/components/StepBrowser";
 import VoicePanel from "@/components/VoicePanel";
 import ZoomViewer from "@/components/ZoomViewer";
 import { matchCommand } from "@/lib/commands";
@@ -21,6 +22,7 @@ import { openManualPdf, renderPage } from "@/lib/pdf";
 import { loadPrebuilt, type Prebuilt } from "@/lib/prebuilt";
 import { speak, speaker, stopSpeaking } from "@/lib/speech";
 import { changed, decide, MAX_TILES, whereAmI, type Tile } from "@/lib/whereAmI";
+import { adjacentLocation, clampStepIdx, createLatestGuard, listPrebuiltSteps, type StepLocation } from "@/lib/stepBrowser";
 
 
 type Phase = { kind: "loading"; label: string } | { kind: "ready" } | { kind: "error"; message: string } | { kind: "done" };
@@ -178,6 +180,13 @@ export default function BuildView() {
   const direction = useRef<1 | -1>(1);
   const landOn = useRef<number | null>(null); // step number the next page load opens at ("go to step 8")
   const search = useRef(0); // bumped to cancel a running "go to step" search
+  const pendingStepIdx = useRef<StepLocation | null>(null);
+  const advanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const checkRequest = useRef(0);
+  const browserOpenRef = useRef(false);
+  const latestPreview = useRef(createLatestGuard());
+  const browseButton = useRef<HTMLButtonElement>(null);
+  const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
 
   const [manual, setManual] = useState<Manual | null>(null);
   const [doc, setDoc] = useState<PageSource | null>(null);
@@ -218,6 +227,28 @@ export default function BuildView() {
   const autoJump = useRef(false); // the next step change is ours, not the builder's
   const firstAutoDone = useRef(false);
   const baseline = useRef<Uint8ClampedArray | null>(null); // camera sample at the last automatic check
+  const [browserOpen, setBrowserOpen] = useState(false);
+  const [previewLocation, setPreviewLocation] = useState<StepLocation>({ page: 1, stepIdx: 0 });
+  const [previewSteps, setPreviewSteps] = useState<ExtractedStep[]>([]);
+  const [stepPreview, setStepPreview] = useState<{ step: ExtractedStep; image: string } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
+  const cancelAdvance = useCallback(() => {
+    if (advanceTimer.current !== null) clearTimeout(advanceTimer.current);
+    advanceTimer.current = null;
+  }, []);
+
+  useEffect(() => () => {
+    cancelAdvance();
+    checkRequest.current++;
+    latestPreview.current.invalidate();
+  }, [cancelAdvance]);
+
+  useEffect(() => {
+    cancelAdvance();
+    checkRequest.current++;
+  }, [page, stepIdx, cancelAdvance]);
 
   // Every page change shows the loading card first.
   const turnTo = useCallback((p: number) => {
@@ -276,8 +307,10 @@ export default function BuildView() {
         const updated = { ...m, pageCount: numPages, openedAt: Date.now() };
         await saveManual(updated);
         setManual(updated);
+        const resumePage = Math.max(1, Math.min(m.page, numPages));
+        pendingStepIdx.current = { page: resumePage, stepIdx: m.stepIdx ?? 0 };
         setDoc(makeSource(m, prebuilt, numPages, pdf));
-        turnTo(Math.min(m.page, numPages));
+        turnTo(resumePage);
       } catch (e) {
         setPhase({ kind: "error", message: e instanceof Error ? e.message : "Couldn't open the PDF." });
       }
@@ -288,6 +321,68 @@ export default function BuildView() {
   }, [id, turnTo]);
 
   const reader = useMemo(() => (doc && manual ? pageReader(manual.id, doc) : null), [doc, manual?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const prebuiltList = useMemo(() => doc?.prebuilt ? listPrebuiltSteps(doc.prebuilt) : null, [doc]);
+
+  const inspectStep = useCallback(async (location: StepLocation) => {
+    const request = latestPreview.current.next();
+    setPreviewLocation(location);
+    setStepPreview(null);
+    setPreviewSteps([]);
+    setPreviewError(null);
+    setPreviewLoading(true);
+    if (!reader || !doc || location.page < 1 || location.page > doc.numPages) {
+      setPreviewLoading(false);
+      setPreviewError("This page isn't available in the manual.");
+      return;
+    }
+    try {
+      // Only this selected page is read. Uploaded manuals do not build a cross-page index.
+      const job = reader(location.page);
+      const found = await job.steps;
+      if (!latestPreview.current.isCurrent(request)) return;
+      setPreviewSteps(found);
+      if (found.length === 0) {
+        setPreviewLoading(false);
+        return;
+      }
+      const stepIdx = clampStepIdx(location.stepIdx, found.length);
+      const image = await job.image();
+      let picture: string;
+      try {
+        picture = await crop(image, found[stepIdx].box);
+      } catch (error) {
+        if (!doc.prebuilt) throw error;
+        picture = image;
+      }
+      if (!latestPreview.current.isCurrent(request)) return;
+      setPreviewLocation({ page: location.page, stepIdx });
+      setStepPreview({ step: found[stepIdx], image: picture });
+      setPreviewLoading(false);
+    } catch (error) {
+      if (!latestPreview.current.isCurrent(request)) return;
+      setPreviewError(error instanceof Error ? error.message : "Couldn't read that page.");
+      setPreviewLoading(false);
+    }
+  }, [reader, doc]);
+
+  const closeStepBrowser = useCallback(() => {
+    browserOpenRef.current = false;
+    latestPreview.current.invalidate();
+    setBrowserOpen(false);
+  }, []);
+
+  const openStepBrowser = useCallback(() => {
+    if (!reader || !doc) return;
+    cancelAdvance();
+    checkRequest.current++;
+    browserOpenRef.current = true;
+    setBrowserOpen(true);
+    void inspectStep({ page: page >= 1 ? page : 1, stepIdx });
+  }, [reader, doc, page, stepIdx, cancelAdvance, inspectStep]);
+
+  const browserList = useMemo(() => prebuiltList ?? previewSteps.map((item, idx) => ({ page: previewLocation.page, stepIdx: idx, number: item.number, instruction: item.instruction })), [prebuiltList, previewSteps, previewLocation.page]);
+  const previousPreview = prebuiltList ? adjacentLocation(prebuiltList, previewLocation, -1) : adjacentLocation(previewSteps, previewLocation, -1);
+  const nextPreview = prebuiltList ? adjacentLocation(prebuiltList, previewLocation, 1) : adjacentLocation(previewSteps, previewLocation, 1);
 
   // 2. read the current page (and the next few in the background); skip pages with no steps
   useEffect(() => {
@@ -302,6 +397,7 @@ export default function BuildView() {
       .then(([image, found]) => {
         if (cancelled) return;
         if (found.length === 0) {
+          pendingStepIdx.current = null;
           const next = page + direction.current;
           if (next >= 1 && next <= doc.numPages) return turnTo(next);
           if (next > doc.numPages) return setPhase({ kind: "done" });
@@ -312,17 +408,29 @@ export default function BuildView() {
         setSteps(found);
         const land = landOn.current == null ? -1 : found.findIndex((s) => s.number === landOn.current);
         landOn.current = null;
-        setStepIdx(land >= 0 ? land : direction.current === 1 ? 0 : found.length - 1);
+        const pending = pendingStepIdx.current?.page === page ? pendingStepIdx.current : null;
+        setStepIdx(pending ? clampStepIdx(pending.stepIdx, found.length) : land >= 0 ? land : direction.current === 1 ? 0 : found.length - 1);
+        pendingStepIdx.current = null;
         setPhase({ kind: "ready" });
-        saveManual({ ...manual, page, openedAt: Date.now() });
       })
-      .catch((e) => !cancelled && setPhase({ kind: "error", message: e instanceof Error ? e.message : "Couldn't read that page." }));
+      .catch((e) => {
+        if (cancelled) return;
+        pendingStepIdx.current = null;
+        setPhase({ kind: "error", message: e instanceof Error ? e.message : "Couldn't read that page." });
+      });
     return () => {
       cancelled = true;
     };
     // manual is saved as a side effect; re-running on its change would loop
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reader, page, attempt]);
+
+  // Only active progress is persisted. The browser's temporary location never reaches this effect.
+  useEffect(() => {
+    if (!manual || phase.kind !== "ready" || !step || page < 1) return;
+    const updated = { ...manual, page, stepIdx, openedAt: Date.now() };
+    saveQueue.current = saveQueue.current.catch(() => {}).then(() => saveManual(updated));
+  }, [manual, phase.kind, page, stepIdx, step]);
 
   // 3. cut out this step's target picture (and the one before it) for display and checking
   useEffect(() => {
@@ -400,19 +508,49 @@ export default function BuildView() {
       if (!doc || (ask && !window.confirm("Start over from step 1?"))) return;
       search.current++;
       stopSpeaking();
+      cancelAdvance();
+      checkRequest.current++;
+      pendingStepIdx.current = null;
       direction.current = 1;
       setSelection(null);
       setSheetOpen(true);
       turnTo(1);
       setAttempt((n) => n + 1); // re-read even if we're already on page 1
     },
-    [doc, turnTo],
+    [doc, turnTo, cancelAdvance],
   );
+
+  const jumpTo = useCallback((location: StepLocation) => {
+    if (!doc || location.page < 1 || location.page > doc.numPages) return;
+    cancelAdvance();
+    checkRequest.current++;
+    setCheck(null);
+    setSelection(null);
+    direction.current = 1;
+    if (location.page === page && phase.kind === "ready" && steps.length > 0) {
+      pendingStepIdx.current = null;
+      setStepIdx(clampStepIdx(location.stepIdx, steps.length));
+      return;
+    }
+    pendingStepIdx.current = location;
+    turnTo(location.page);
+    if (location.page === page) setAttempt((value) => value + 1);
+  }, [doc, page, phase.kind, steps.length, cancelAdvance, turnTo]);
+
+  const switchToPreview = useCallback(() => {
+    if (!stepPreview || previewLoading || previewError) return;
+    const location = previewLocation;
+    closeStepBrowser();
+    jumpTo(location);
+  }, [stepPreview, previewLoading, previewError, previewLocation, closeStepBrowser, jumpTo]);
 
   const go = useCallback(
     (delta: 1 | -1) => {
       if (phase.kind !== "ready" || !doc) return;
       search.current++;
+      cancelAdvance();
+      checkRequest.current++;
+      pendingStepIdx.current = null;
       setCheck(null);
       direction.current = delta;
       const nextIdx = stepIdx + delta;
@@ -422,13 +560,14 @@ export default function BuildView() {
       if (nextPage > doc.numPages) return setPhase({ kind: "done" });
       turnTo(nextPage);
     },
-    [phase.kind, doc, stepIdx, steps.length, page, turnTo],
+    [phase.kind, doc, stepIdx, steps.length, page, turnTo, cancelAdvance],
   );
 
   const runCheck = useCallback(async () => {
-    if (!step || !target || check?.state === "checking") return;
+    if (!step || !target || check?.state === "checking" || browserOpenRef.current) return;
     const frame = camera.current?.capture();
     if (!frame) return setCheck({ state: "error", message: "Camera isn't ready yet." });
+    const request = ++checkRequest.current;
     setCheck({ state: "checking" });
     try {
       const res = await fetch("/api/check", {
@@ -437,15 +576,23 @@ export default function BuildView() {
         body: JSON.stringify({ frame, expected: target, previous: previous ?? undefined, instruction: step.instruction, watchFor: step.watchFor }),
       });
       const data = await res.json();
+      if (request !== checkRequest.current || browserOpenRef.current) return;
       if (!res.ok) throw new Error(data.error);
       const result = data as CheckResult;
       setCheck({ state: "result", result, frame });
       if (!muted && result.say) speak(result.say);
-      if (result.step_complete && result.confidence >= 0.7) setTimeout(() => go(1), 1800);
+      if (result.step_complete && result.confidence >= 0.7) {
+        cancelAdvance();
+        advanceTimer.current = setTimeout(() => {
+          advanceTimer.current = null;
+          if (request === checkRequest.current && !browserOpenRef.current) go(1);
+        }, 1800);
+      }
     } catch (e) {
+      if (request !== checkRequest.current || browserOpenRef.current) return;
       setCheck({ state: "error", message: e instanceof Error && e.message ? e.message : "Check failed." });
     }
-  }, [step, target, previous, check?.state, muted, go]);
+  }, [step, target, previous, check?.state, muted, go, cancelAdvance]);
 
   const speakStep = useCallback(() => {
     if (step && !muted) speak(`Step ${step.number}. ${step.instruction}`);
@@ -662,7 +809,15 @@ export default function BuildView() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (browserOpenRef.current) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          closeStepBrowser();
+        }
+        return;
+      }
       if (zoomOpen) return; // the zoom viewer handles its own keys
+      if (e.target instanceof HTMLElement && e.target.closest("button, a, input, select, textarea")) return;
       if (e.key === "ArrowRight") go(1);
       if (e.key === "ArrowLeft") go(-1);
       if (e.key === " " || e.key === "Enter") {
@@ -672,7 +827,7 @@ export default function BuildView() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [go, runCheck, zoomOpen]);
+  }, [go, runCheck, zoomOpen, closeStepBrowser]);
 
   const verdict = useMemo(() => {
     if (check?.state !== "result") return null;
@@ -883,6 +1038,13 @@ export default function BuildView() {
                 <span className="mx-auto block h-1.5 w-10 rounded-full bg-white/30" />
               </button>
             )}
+            {doc && (
+              <div className="mb-2 flex justify-end">
+                <button ref={browseButton} onClick={openStepBrowser} className="min-h-11 rounded-xl border border-sky-300/30 bg-sky-300/10 px-4 text-sm font-medium text-sky-100 transition hover:bg-sky-300/20 focus-visible:outline-2 focus-visible:outline-sky-300">
+                  Browse steps
+                </button>
+              </div>
+            )}
 
             {compact && phase.kind === "ready" && step && (
               <div className="flex items-center gap-3">
@@ -1078,6 +1240,26 @@ export default function BuildView() {
           </motion.section>
         </AnimatePresence>
       </div>
+      {browserOpen && doc && (
+        <StepBrowser
+          active={{ page, stepIdx }}
+          activeNumber={step?.number}
+          previewLocation={previewLocation}
+          previewStep={stepPreview?.step ?? null}
+          previewImage={stepPreview?.image ?? null}
+          list={browserList}
+          pageCount={doc.numPages}
+          isPrebuilt={!!doc.prebuilt}
+          loading={previewLoading}
+          error={previewError}
+          previousLocation={previousPreview}
+          nextLocation={nextPreview}
+          triggerRef={browseButton}
+          onInspect={(location) => { void inspectStep(location); }}
+          onClose={closeStepBrowser}
+          onSwitch={switchToPreview}
+        />
+      )}
     </main>
   );
 }

@@ -23,10 +23,20 @@ WIDTH = 1200
 
 
 def render(doc, index):
+    """Page image as sent to Claude: with the same faint percentage grid the app draws (boxes come out accurate)."""
     page = doc[index]
     scale = WIDTH / page.rect.width
     pix = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale))
-    return "data:image/jpeg;base64," + base64.b64encode(pix.tobytes("jpeg", jpg_quality=85)).decode()
+    grid = pymupdf.open()
+    gp = grid.new_page(width=pix.width, height=pix.height)
+    gp.insert_image(gp.rect, stream=pix.tobytes("png"))
+    for i in range(1, 10):
+        x, y = pix.width * i / 10, pix.height * i / 10
+        gp.draw_line((x, 0), (x, pix.height), color=(1, 0, 0.6), width=0.7)
+        gp.draw_line((0, y), (pix.width, y), color=(1, 0, 0.6), width=0.7)
+        gp.insert_text((x + 2, 11), str(i * 10), fontsize=9, color=(1, 0, 0.6))
+        gp.insert_text((2, y - 2), str(i * 10), fontsize=9, color=(1, 0, 0.6))
+    return "data:image/jpeg;base64," + base64.b64encode(gp.get_pixmap().tobytes("jpeg", jpg_quality=80)).decode()
 
 
 def extract(api, image, attempts=3):

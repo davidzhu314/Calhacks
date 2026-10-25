@@ -3,8 +3,7 @@
 
 import { motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
-import type { Box } from "@/app/api/locate/route";
-import HighlightBox from "@/components/HighlightBox";
+import { PartMarks, type PartMark } from "@/components/HighlightBox";
 
 // Where the user put the panel: left/top and width in px. Remembered per device.
 type Place = { x: number; y: number; w: number };
@@ -45,8 +44,7 @@ export default function ManualPanel({
   target,
   stepNumber,
   glow,
-  callout,
-  placed,
+  marks,
   compact,
   defaultClassName,
   onOpen,
@@ -54,8 +52,7 @@ export default function ManualPanel({
   target: string;
   stepNumber?: string | number;
   glow: boolean;
-  callout?: Box | null;
-  placed?: Box | null;
+  marks?: PartMark[]; // every part of this step: where it is in the parts box and where it goes
   compact: boolean;
   defaultClassName: string; // position and width before the user moves or resizes it
   onOpen: () => void;
@@ -150,8 +147,7 @@ export default function ManualPanel({
         )}
         <div className="relative m-2 overflow-hidden rounded-lg bg-ink/60">
           <img src={target} alt={`Manual picture for step ${stepNumber}`} draggable={false} className={`w-full ${glow ? "holo-image" : ""}`} />
-          {callout && <HighlightBox box={callout} kind="callout" />}
-          {placed && <HighlightBox box={placed} kind="placed" />}
+          <PartMarks marks={marks} />
         </div>
       </button>
 

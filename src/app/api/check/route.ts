@@ -8,7 +8,8 @@ const MAX_IMAGE_CHARS = 4_000_000;
 
 export type CheckResult = {
   step_complete: boolean;
-  confidence: number; // 0–1
+  confidence: number; // 0–1: how sure the step_complete call is (forced low when the camera can't see the build)
+  can_see: boolean; // false when the camera view doesn't show the build clearly (dark, covered, blurry, off-frame)
   issues: { part: string; problem: string; fix: string }[];
   say: string; // one short sentence to speak aloud
 };
@@ -33,10 +34,12 @@ Focus on what changed between PREVIOUS and EXPECTED: is that change present in C
 in the right place and orientation?
 
 Reply with JSON only, no other text:
-{"step_complete": boolean, "confidence": number between 0 and 1,
+{"can_see": boolean, "step_complete": boolean, "confidence": number between 0 and 1,
  "issues": [{"part": "piece by color and size", "problem": "what's wrong", "fix": "what to do"}],
  "say": "one sentence, at most 20 words, to speak to the builder"}
-If the camera view is too unclear to judge, set confidence below 0.5 and ask for a closer or clearer view in "say".`;
+- can_see: false if CAMERA doesn't clearly show the build (too dark, covered, blurry, or the build isn't in frame).
+- confidence: how sure you are that step_complete is right. It is NOT how sure you are that the camera is unusable.
+- If can_see is false: step_complete false, issues empty, and "say" asks for a closer or clearer view.`;
 
 function isImage(s: unknown): s is string {
   return typeof s === "string" && s.startsWith("data:image/") && s.length <= MAX_IMAGE_CHARS;
@@ -45,13 +48,16 @@ function isImage(s: unknown): s is string {
 // The model is asked for bare JSON; tolerate a stray code fence anyway.
 function parseResult(text: string): CheckResult | null {
   try {
-    const r = firstJsonObject(text) as { step_complete?: unknown; confidence?: unknown; issues?: unknown; say?: unknown } | null;
+    const r = firstJsonObject(text) as { can_see?: unknown; step_complete?: unknown; confidence?: unknown; issues?: unknown; say?: unknown } | null;
     if (!r) return null;
     if (typeof r.step_complete !== "boolean" || typeof r.confidence !== "number") return null;
+    const canSee = r.can_see !== false;
+    // Can't see the build: never report it as a confident pass or a list of problems.
     return {
-      step_complete: r.step_complete,
-      confidence: Math.max(0, Math.min(1, r.confidence)),
-      issues: Array.isArray(r.issues) ? r.issues : [],
+      can_see: canSee,
+      step_complete: canSee && r.step_complete,
+      confidence: canSee ? Math.max(0, Math.min(1, r.confidence)) : Math.min(0.3, Math.max(0, r.confidence)),
+      issues: canSee && Array.isArray(r.issues) ? r.issues : [],
       say: typeof r.say === "string" ? r.say : "",
     };
   } catch {

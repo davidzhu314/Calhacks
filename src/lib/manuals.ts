@@ -51,8 +51,8 @@ export async function removeManual(id: string) {
 
 // Steps extracted from each page, cached so a page is only read once.
 // Versioned: bump when page reading changes, so devices re-read pages instead of trusting old results.
-// v2 = unnumbered IKEA steps, JSON parsing fix, smaller uploads.
-const STEPS = "steps:v2:";
+// v2 = unnumbered IKEA steps, JSON parsing fix, smaller uploads. v3 = sub-panels ("8 · 2 of 4"), grid-measured boxes.
+const STEPS = "steps:v3:";
 export const getPageSteps = <T,>(id: string, page: number) => get<T[]>(`${STEPS}${id}:${page}`);
 export const savePageSteps = <T,>(id: string, page: number, steps: T[]) => set(`${STEPS}${id}:${page}`, steps);
 

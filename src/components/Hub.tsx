@@ -7,6 +7,7 @@ import BookPicker from "@/components/hud/BookPicker";
 import CatalogCard from "@/components/hud/CatalogCard";
 import HudBackdrop from "@/components/hud/HudBackdrop";
 import ManualCard from "@/components/hud/ManualCard";
+import SearchScan from "@/components/hud/SearchScan";
 import StatusBar from "@/components/hud/StatusBar";
 import { categoriesOf, IKEA, LEGO, matches, toResult, type CatalogItem, type CatalogManual } from "@/lib/catalog";
 import { addFromResult, addUpload, listManuals, removeManual, type Manual, type ManualResult } from "@/lib/manuals";
@@ -27,7 +28,7 @@ export default function Hub() {
   const [error, setError] = useState<string | null>(null);
   // Live search for things not in the catalog (any LEGO set number, any IKEA product)
   const [live, setLive] = useState<{ q: string; results: ManualResult[] } | null>(null);
-  const [searching, setSearching] = useState(false);
+  const [searching, setSearching] = useState<string | null>(null); // the query being searched right now
 
   useEffect(() => {
     listManuals().then(setLibrary).catch(() => setLibrary([]));
@@ -83,7 +84,7 @@ export default function Hub() {
   const liveSearch = useCallback(async (q: string) => {
     const text = q.trim();
     if (text.length < 2) return;
-    setSearching(true);
+    setSearching(text);
     setError(null);
     try {
       const res = await fetch(`/api/search?q=${encodeURIComponent(text)}`);
@@ -93,7 +94,7 @@ export default function Hub() {
     } catch (e) {
       setError(e instanceof Error && e.message ? e.message : "Search failed.");
     } finally {
-      setSearching(false);
+      setSearching(null);
     }
   }, []);
 
@@ -179,7 +180,7 @@ export default function Hub() {
             {tab !== "mine" && (
               <button
                 type="submit"
-                disabled={searching}
+                disabled={searching != null}
                 className="shrink-0 rounded-xl bg-gradient-to-b from-sky-300 to-sky-500 px-5 py-3 text-sm font-semibold text-ink shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_6px_20px_-6px_rgba(92,200,255,0.7)] transition hover:brightness-110 active:scale-95 disabled:opacity-60"
               >
                 {searching ? "Searching…" : "Search"}
@@ -241,17 +242,18 @@ export default function Hub() {
 
         {/* live search results (anything not in the catalog) */}
         <AnimatePresence>
-          {(searching || live) && tab !== "mine" && (
+          {(searching != null || live) && tab !== "mine" && (
             <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mt-4">
-              <h2 className="text-sm font-semibold text-white/90">
-                {searching ? "Searching LEGO and IKEA…" : `From ${isSetNumber(live!.q) ? "LEGO" : "IKEA"} for “${live!.q}”`}
-              </h2>
-              {searching && <div className="scan-bar mt-3 h-0.5 w-full rounded-full" />}
-              {live && live.results.length === 0 && (
+              {searching != null ? (
+                <SearchScan key={searching} query={searching} lego={isSetNumber(searching)} />
+              ) : (
+                <h2 className="text-sm font-semibold text-white/90">{`From ${isSetNumber(live!.q) ? "LEGO" : "IKEA"} for “${live!.q}”`}</h2>
+              )}
+              {searching == null && live && live.results.length === 0 && (
                 <p className="mt-2 text-sm text-white/50">Nothing found. LEGO needs a set number (e.g. 31163); for IKEA try the product name.</p>
               )}
               <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {live?.results.map((r, i) => (
+                {searching == null && live?.results.map((r, i) => (
                   <ManualCard
                     key={r.pdfPath}
                     index={i}
@@ -273,9 +275,9 @@ export default function Hub() {
         {/* catalog */}
         {tab !== "mine" && (
           <section className="mt-4">
-            {shown.length === 0 && !live && (
+            {shown.length === 0 && !live && searching == null && (
               <p className="mt-6 text-sm text-white/50">
-                Nothing in the catalog matches. Press <span className="text-white/80">Search</span> to look it up on {tab === "lego" ? "LEGO" : "IKEA"}.
+                Nothing in the catalog matches. Press <span className="text-white/80">Search</span> to look it up on {isSetNumber(query) ? "LEGO" : "IKEA"}.
               </p>
             )}
             <motion.div layout className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">

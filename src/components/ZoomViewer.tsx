@@ -3,8 +3,7 @@
 
 import { motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { Box } from "@/app/api/locate/route";
-import HighlightBox from "@/components/HighlightBox";
+import { PartMarks, type PartMark } from "@/components/HighlightBox";
 
 const MIN = 1; // 1 = the whole picture fits the screen
 const MAX = 6;
@@ -23,8 +22,7 @@ export default function ZoomViewer({
   stepNumber,
   glow,
   onGlowChange,
-  callout,
-  placed,
+  marks,
   onClose,
 }: {
   target: string;
@@ -32,8 +30,7 @@ export default function ZoomViewer({
   stepNumber?: string | number;
   glow: boolean;
   onGlowChange: (glow: boolean) => void;
-  callout?: Box | null;
-  placed?: Box | null;
+  marks?: PartMark[]; // every part of this step: where it is in the parts box and where it goes
   onClose: () => void;
 }) {
   const reduced = useReducedMotion();
@@ -346,8 +343,7 @@ export default function ZoomViewer({
             style={{ left: fit.x, top: fit.y, width: fit.w, height: fit.h }}
           >
             <img src={src} alt={mode === "page" ? "Whole manual page" : `Manual picture for step ${stepNumber ?? ""}`} draggable={false} className={`h-full w-full rounded-lg ${glow ? "holo-image" : ""}`} />
-            {mode === "step" && callout && <HighlightBox box={callout} kind="callout" />}
-            {mode === "step" && placed && <HighlightBox box={placed} kind="placed" />}
+            {mode === "step" && <PartMarks marks={marks} />}
           </div>
         )}
       </motion.div>

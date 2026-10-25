@@ -30,6 +30,9 @@ check("guide strips geometry when not visible", () => {
   assert.equal(guide.partBox, undefined);
   assert.equal(guide.orientationDegrees, null);
 });
+check("demo responses retain an explicit preview label", () => {
+  assert.equal(parseGuide({ ...valid, demo: true }).demo, true);
+});
 check("guide accepts no placement and rejects outside placement", () => {
   assert.equal(parseGuide({ ...valid, placement: null }).placement, undefined);
   assert.equal(parseGuide({ ...valid, placement: { x: .95, y: .95 } }).placement, undefined);

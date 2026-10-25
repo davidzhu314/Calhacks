@@ -106,7 +106,7 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
   useEffect(() => {
     if (!enabled) return;
     const timer = window.setInterval(() => {
-      if (document.hidden || busy.current || !anchor.current) return;
+      if (document.hidden || busy.current || !anchor.current || anchor.current.guide.demo) return;
       if (isLost(anchor.current, Date.now())) {
         anchor.current = null;
         cache.current.delete(activeKey.current);

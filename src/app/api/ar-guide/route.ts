@@ -16,6 +16,14 @@ export async function POST(request: Request) {
   if (!image(frame) || !image(expected) || (previous !== undefined && !image(previous)) || !short(instruction, 1000) || !short(part, 160) || !part.trim()) {
     return Response.json({ error: "Send a camera frame, manual step image, and a short part description." }, { status: 400 });
   }
+  // Explicit local preview mode: fixed coordinates demonstrate the UI, never claim camera alignment.
+  if (process.env.AR_GUIDE_DEMO === "1") {
+    return Response.json({ ...parseGuide({ visible: true, status: "future-placement", confidence: .96, demo: true,
+      explanation: "Simulated placement preview — use a Claude key for real camera alignment.",
+      assemblyBox: { left: .28, top: .27, right: .72, bottom: .74 },
+      partBox: { left: .38, top: .36, right: .49, bottom: .48 },
+      placement: { x: .56, y: .58 }, orientationDegrees: 0 }), latencyMs: 0 });
+  }
   const parts: Part[] = [];
   if (previous) parts.push({ type: "text", text: "PREVIOUS manual state:" }, { type: "image", dataUrl: previous });
   parts.push({ type: "text", text: "CURRENT manual step:" }, { type: "image", dataUrl: expected }, { type: "text", text: "CAMERA photo:" }, { type: "image", dataUrl: frame });

@@ -1,7 +1,7 @@
 export type ArBox = { left: number; top: number; right: number; bottom: number };
 export type ArPoint = { x: number; y: number };
 export type ArStatus = "present" | "absent" | "occluded" | "future-placement" | "ambiguous";
-export type ArGuide = { visible: boolean; status: ArStatus; confidence: number; explanation: string; partBox?: ArBox; assemblyBox?: ArBox; placement?: ArPoint; orientationDegrees: number | null };
+export type ArGuide = { visible: boolean; status: ArStatus; confidence: number; explanation: string; demo?: boolean; partBox?: ArBox; assemblyBox?: ArBox; placement?: ArPoint; orientationDegrees: number | null };
 
 const clamp = (v: number) => Math.max(0, Math.min(1, v));
 function record(v: unknown): Record<string, unknown> | null { return v !== null && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : null; }
@@ -24,7 +24,7 @@ export function parseGuide(raw: unknown): ArGuide | null {
   const statuses: ArStatus[] = ["present", "absent", "occluded", "future-placement", "ambiguous"];
   const status = statuses.includes(r.status as ArStatus) ? r.status as ArStatus : "ambiguous";
   const confidence = clamp(r.confidence);
-  const result: ArGuide = { visible: r.visible, status, confidence, explanation: typeof r.explanation === "string" ? r.explanation.slice(0, 240) : "", orientationDegrees: null };
+  const result: ArGuide = { visible: r.visible, status, confidence, explanation: typeof r.explanation === "string" ? r.explanation.slice(0, 240) : "", demo: r.demo === true, orientationDegrees: null };
   if (!result.visible) return result;
   result.assemblyBox = box(r.assemblyBox);
   result.partBox = box(r.partBox);

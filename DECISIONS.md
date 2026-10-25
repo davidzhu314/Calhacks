@@ -113,6 +113,14 @@ Format: **Decision** — why. *(date, PT)*
 - ~~Passcode lock on the whole site~~ **Removed** (Sat Oct 24, ~12 PM): not worth the friction for the demo. The API key still never reaches the browser; a spending limit on the Anthropic key is the safeguard. *(added ~9:30 AM)*
 - **Secrets live in `.env.local`** (git-ignored) and in Vercel's environment settings. Never committed. *(Sat Oct 24, ~1:30 AM)*
 
+## Step Browser decisions
+
+- **Step Browser state** *(Sat Oct 24)*: preview location, image, loading, and errors are separate from the active build location so browsing cannot change guidance, checks, voice, or part selection.
+- **Exact step jumps** *(Sat Oct 24)*: a pending `{page, stepIdx}` is consumed by the active page-load effect for cross-page switches; same-page switches update the index directly.
+- **Progress resume** *(Sat Oct 24)*: save the optional `Manual.stepIdx` with the active page; manuals saved before this change resume at index zero.
+- **Step Browser tests** *(Sat Oct 24)*: Vitest with jsdom covers pure location logic and client interactions without keys or network calls.
+- **Production build fallback** *(Sat Oct 24)*: use Next's supported Webpack build mode with Tailwind's PostCSS plugin so `npm run build` and local browser QA work when native SWC is unavailable; the Turbopack loader remains configured for environments that use it.
+
 ## Open questions
 
 - [ ] Microsoft booth: Azure required? "Path to production" meaning? Credits for Claude on Foundry?

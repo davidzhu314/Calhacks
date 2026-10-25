@@ -13,3 +13,9 @@ npm run dev                  # http://localhost:3000
 ```
 
 The camera needs HTTPS on phones; use the Vercel deployment link there. `localhost` works on a laptop.
+
+## Step Browser
+
+On the build screen, choose **Browse steps** to inspect manual pictures, instructions, and parts without moving your active build step. Use **Switch to this step** when you want guidance and camera checks to move there. Uploaded manuals read the page you select; this may take a moment. BuildSight remembers the exact active step when you return.
+
+Run the offline test suite with `npm test`.

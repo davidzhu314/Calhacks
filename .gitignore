@@ -12,6 +12,7 @@
 
 # testing
 /coverage
+/.agent-screenshots/
 
 # next.js
 /.next/

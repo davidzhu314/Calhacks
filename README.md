@@ -31,7 +31,7 @@ Use `npm run lint`, `npx tsc --noEmit`, and `npm run build` for the remaining lo
 
 ## AR Guide (local experiment)
 
-On the build screen, turn on **AR Guide** to locate the active step's required piece and a suggested placement on the live camera. The cyan outline is a **2D camera guide**, not measured 3D registration. Use **Adjust placement** and tap the camera if the suggestion is off; **Rescan** asks for a fresh view. Amber means alignment is uncertain or has been lost. The guide never advances a step; **Check build** remains the verification action. Camera access needs HTTPS or localhost, and live grounding needs the existing Claude key.
+On the build screen, AR starts off. Use the header's **AR off / AR on** toggle to show or hide guidance at any time. The cyan outline is a **2D camera guide**, not measured 3D registration. Use **Adjust placement** and tap the camera if the suggestion is off; **Rescan** asks for a fresh view. Amber means alignment is uncertain or has been lost. The guide never advances a step; **Check build** remains the verification action. Camera access needs HTTPS or localhost, and live grounding needs the existing Claude key.
 
 `npm run test:ar` checks the geometry, response validation, anchor rules, and request gate. For a mocked mobile browser run with a fake camera, start the production app (`npm run build && npm run start -- -p 3101`) and run `node scripts/e2e-ar-guide.mjs`. Set `E2E_BASE_URL` for another port and `CHROME_PATH` if Chrome is not at the macOS default path. Playwright is a development dependency only.
 

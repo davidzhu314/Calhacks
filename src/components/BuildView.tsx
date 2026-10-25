@@ -1015,7 +1015,17 @@ export default function BuildView() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-        <button onClick={() => setArEnabled((v) => !v)} aria-pressed={arEnabled} className={`hud-panel rounded-xl px-3 py-2 text-xs font-semibold transition hover:border-cyan-300/60 ${arEnabled ? "border border-cyan-300/60 text-cyan-100" : "text-white/85"}`}>AR Guide</button>
+        <button
+          data-testid="ar-toggle"
+          onClick={() => setArEnabled((v) => !v)}
+          aria-label={`AR Guide ${arEnabled ? "on" : "off"}`}
+          aria-pressed={arEnabled}
+          title={arEnabled ? "Turn AR Guide off" : "Turn AR Guide on"}
+          className={`hud-panel flex min-h-11 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition hover:border-cyan-300/60 focus-visible:outline-2 focus-visible:outline-cyan-300 ${arEnabled ? "border-cyan-300/60 bg-cyan-300/15 text-cyan-100" : "border-white/15 text-white/85"}`}
+        >
+          <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${arEnabled ? "bg-cyan-300 shadow-[0_0_8px_#67e8f9]" : "bg-white/40"}`} />
+          AR {arEnabled ? "on" : "off"}
+        </button>
         <button
           onClick={() => restart()}
           disabled={!doc}

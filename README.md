@@ -18,7 +18,7 @@ The camera needs HTTPS on phones; use the Vercel deployment link there. `localho
 
 Find a LEGO set in the catalog or by its 4–7 digit set number, search IKEA by product name, or upload any picture-based PDF manual. The home screen also resumes the latest build saved on this device. Pick an instruction book when a product has several.
 
-The build screen keeps the camera behind the active instruction. Tap a part to locate it in the manual, open the picture to zoom, use **Check build** to compare the camera with the step, and use **Browse steps** to inspect or switch steps. Voice questions and simple commands are available from the microphone control.
+The build screen keeps the camera behind the active instruction. Parts appear as numbered holograms with matching marks on the manual image. Open the picture to zoom, use **Check build** to compare the camera with the step, and use the step strip or **Browse steps** to switch steps. Voice questions and simple commands are available from the microphone control.
 
 The interface tokens and component rules are in [UI_DESIGN.md](UI_DESIGN.md). The multi-book picker uses Radix Dialog; the rest of the interface uses Tailwind and the existing Motion animations.
 
@@ -28,3 +28,9 @@ On the build screen, choose **Browse steps** to inspect manual pictures, instruc
 
 Run the offline test suite with `npm test`.
 Use `npm run lint`, `npx tsc --noEmit`, and `npm run build` for the remaining local checks.
+
+## AR Guide (local experiment)
+
+On the build screen, turn on **AR Guide** to locate the active step's required piece and a suggested placement on the live camera. The cyan outline is a **2D camera guide**, not measured 3D registration. Use **Adjust placement** and tap the camera if the suggestion is off; **Rescan** asks for a fresh view. Amber means alignment is uncertain or has been lost. The guide never advances a step; **Check build** remains the verification action. Camera access needs HTTPS or localhost, and live grounding needs the existing Claude key.
+
+`npm run test:ar` checks the geometry, response validation, anchor rules, and request gate. For a mocked mobile browser run with a fake camera, start the production app (`npm run build && npm run start -- -p 3101`) and run `node scripts/e2e-ar-guide.mjs`. Set `E2E_BASE_URL` for another port and `CHROME_PATH` if Chrome is not at the macOS default path. Playwright is a development dependency only.

@@ -23,7 +23,7 @@ vi.mock("motion/react", () => ({
 vi.mock("@/components/CameraFeed", async () => {
   const React = await import("react");
   return { default: React.forwardRef(function CameraMock(_props, ref) {
-    React.useImperativeHandle(ref, () => ({ capture: () => "data:image/jpeg;base64,frame", sample: () => null }));
+    React.useImperativeHandle(ref, () => ({ capture: () => "data:image/jpeg;base64,frame", sample: () => null, geometry: () => null }));
     return <div data-testid="camera" />;
   }) };
 });

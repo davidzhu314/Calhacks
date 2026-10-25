@@ -11,6 +11,7 @@ export type CameraHandle = {
   capture: () => string | null;
   sample: () => Uint8ClampedArray | null;
   size: () => { w: number; h: number } | null;
+  geometry: () => { videoWidth: number; videoHeight: number; boxWidth: number; boxHeight: number } | null;
 };
 
 const MAX_SIDE = 896; // enough detail for bricks, small enough to upload fast on venue Wi-Fi
@@ -76,6 +77,12 @@ const CameraFeed = forwardRef<CameraHandle, { onStatusChange?: (status: CameraSt
     size() {
       const v = video.current;
       return v && v.videoWidth ? { w: v.videoWidth, h: v.videoHeight } : null;
+    },
+    geometry() {
+      const v = video.current;
+      if (!v || !v.videoWidth) return null;
+      const rect = v.getBoundingClientRect();
+      return { videoWidth: v.videoWidth, videoHeight: v.videoHeight, boxWidth: rect.width, boxHeight: rect.height };
     },
     sample() {
       const v = video.current;

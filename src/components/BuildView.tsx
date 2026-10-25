@@ -555,7 +555,6 @@ export default function BuildView() {
     cancelAdvance();
     checkRequest.current++;
     setCheck(null);
-    setSelection(null);
     direction.current = 1;
     if (location.page === page && phase.kind === "ready" && steps.length > 0) {
       pendingStepIdx.current = null;

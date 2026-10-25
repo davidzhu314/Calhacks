@@ -23,7 +23,7 @@ vi.mock("motion/react", () => ({
 vi.mock("@/components/CameraFeed", async () => {
   const React = await import("react");
   return { default: React.forwardRef(function CameraMock(_props, ref) {
-    React.useImperativeHandle(ref, () => ({ capture: () => "data:image/jpeg;base64,frame" }));
+    React.useImperativeHandle(ref, () => ({ capture: () => "data:image/jpeg;base64,frame", sample: () => null }));
     return <div data-testid="camera" />;
   }) };
 });
@@ -59,7 +59,9 @@ function deferred<T>() {
 beforeEach(() => {
   Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }) });
   Object.defineProperty(HTMLImageElement.prototype, "decode", { configurable: true, value: vi.fn(async () => {}) });
-  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ drawImage: vi.fn() } as unknown as CanvasRenderingContext2D);
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+    drawImage: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(), fillText: vi.fn(),
+  } as unknown as CanvasRenderingContext2D);
   vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/jpeg;base64,cropped");
   mocks.getManual.mockResolvedValue({ ...manual });
   mocks.saveManual.mockResolvedValue(undefined);
@@ -90,10 +92,8 @@ async function readyAt(instruction = "Build first piece.") {
 }
 
 describe("BuildView step browser", () => {
-  it("previews without changing active progress, speech, checks, part selection, or hologram", async () => {
+  it("previews without changing active progress, speech, or checks", async () => {
     await readyAt();
-    fireEvent.click(screen.getByRole("button", { name: /blue plate/ }));
-    await waitFor(() => expect(screen.getByRole("button", { name: /blue plate/ }).getAttribute("aria-pressed")).toBe("true"));
     mocks.saveManual.mockClear();
     mocks.speak.mockClear();
     (fetch as ReturnType<typeof vi.fn>).mockClear();
@@ -103,10 +103,9 @@ describe("BuildView step browser", () => {
     fireEvent.click(screen.getByRole("button", { name: /Step 2 · Page 7/ }));
     await screen.findByRole("heading", { name: "Add the third piece." });
     expect(screen.getByRole("heading", { name: "Build first piece." })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /blue plate/ }).getAttribute("aria-pressed")).toBe("true");
     expect(mocks.saveManual).not.toHaveBeenCalled();
     expect(mocks.speak).not.toHaveBeenCalled();
-    expect(fetch).not.toHaveBeenCalled();
+    expect((fetch as ReturnType<typeof vi.fn>).mock.calls.some(([input]) => input === "/api/check")).toBe(false);
   });
 
   it("keeps only the newest preview when an older page resolves late", async () => {

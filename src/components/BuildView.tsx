@@ -226,6 +226,7 @@ export default function BuildView() {
   const [previous, setPrevious] = useState<string | null>(null);
   const [check, setCheck] = useState<Check | null>(null);
   const [muted, setMuted] = useState(false);
+  const [cameraStatus, setCameraStatus] = useState<{ state: "starting" | "ready" | "error"; message?: string }>({ state: "starting" });
   const [showManual, setShowManual] = useState(false); // true = blue "hologram" tint; default is the real colors
   const [zoomOpen, setZoomOpen] = useState(false); // full-screen zoom viewer for the manual picture
   // Phones get a swipeable step card: swipe down to see your build, up for full details.
@@ -238,7 +239,7 @@ export default function BuildView() {
   const located = useRef(new Map<string, Promise<LocateResult | null>>());
   const [attempt, setAttempt] = useState(0); // bumped by Retry to re-read the page
   const [preview, setPreview] = useState<string | null>(null); // page image shown while Claude reads it
-  // Finding the step from the camera, always automatic (no button): see findMyPlace and the auto-detect loop below.
+  // Finding the step from the camera, automatically or on demand: see findMyPlace below.
   const [readCount, setReadCount] = useState(0); // pages read so far, in view or in the background
   const [locating, setLocating] = useState(false);
   const [notice, setNotice] = useState<{ text: string; problems?: string[] } | null>(null);
@@ -870,7 +871,7 @@ export default function BuildView() {
 
   return (
     <main className="relative h-dvh w-full overflow-hidden bg-ink text-white">
-      <CameraFeed ref={camera} />
+      <CameraFeed ref={camera} onStatusChange={setCameraStatus} />
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-ink/70 via-transparent to-ink/80" />
 
       {/* top bar */}
@@ -940,7 +941,7 @@ export default function BuildView() {
             glow={showManual}
             marks={marks}
             compact={compact}
-            defaultClassName={`absolute right-3 top-20 z-10 transition-[width] duration-300 sm:right-6 sm:top-24 sm:w-72 ${compact ? "w-24" : "w-36"}`}
+            defaultClassName={`absolute right-3 top-20 z-10 transition-[width] duration-300 sm:right-6 sm:top-24 sm:w-72 ${compact ? "w-24" : "w-36 max-[359px]:w-28"}`}
             onOpen={() => setZoomOpen(true)}
           />
         )}
@@ -1066,6 +1067,12 @@ export default function BuildView() {
                   Browse steps
                 </button>
               </div>
+            )}
+
+            {cameraStatus.state !== "ready" && (
+              <p role="status" className={`mb-3 rounded-lg border px-3 py-2 text-xs leading-relaxed sm:hidden ${cameraStatus.state === "error" ? "border-amber-300/25 bg-amber-300/10 text-amber-100" : "border-sky-300/20 bg-sky-300/5 text-sky-100/70"}`}>
+                {cameraStatus.state === "error" ? cameraStatus.message : "Starting camera… Check your browser's camera permission if it does not appear."}
+              </p>
             )}
 
             {compact && phase.kind === "ready" && step && (
@@ -1210,7 +1217,7 @@ export default function BuildView() {
                   )}
                 </AnimatePresence>
 
-                {/* the step is found from the camera automatically; this only shows while a check runs */}
+                {/* Show progress while matching the camera to a step. */}
                 <p className={`mt-3 h-4 text-xs text-sky-300/80 transition-opacity ${locating ? "opacity-100" : "opacity-0"}`} aria-live="polite">
                   {locating ? "Checking where you are…" : ""}
                 </p>

@@ -3,8 +3,8 @@
 import Image from "next/image";
 import { useState } from "react";
 
-// Product photo: resized by Next's optimizer, loaded only near the viewport (unless priority).
-// While loading, the tile stays dark with a soft shimmer; the white backdrop fades in with the photo.
+// Product photo: loaded near the viewport (unless priority). If an external CDN is unavailable,
+// the tile shows a readable fallback instead of keeping an endless loading shimmer.
 export default function ProductImage({
   src,
   sizes,
@@ -33,7 +33,7 @@ export default function ProductImage({
         fill
         sizes={sizes}
         priority={priority}
-        unoptimized={clean.includes("lego.com")}
+        unoptimized={clean.includes("lego.com") || clean.includes("ikea.com")}
         onLoad={() => setLoaded(true)}
         onError={() => setFailed(true)}
         className={`object-contain transition duration-500 ${padded ? "p-3" : ""} ${loaded ? "opacity-100" : "opacity-0"} ${className}`}

@@ -9,6 +9,7 @@ import CatalogCard from "@/components/hud/CatalogCard";
 import HudBackdrop from "@/components/hud/HudBackdrop";
 import ManualCard from "@/components/hud/ManualCard";
 import ProductImage from "@/components/hud/ProductImage";
+import SearchScan from "@/components/hud/SearchScan";
 import StatusBar from "@/components/hud/StatusBar";
 import { categoriesOf, IKEA, LEGO, matches, toResult, type CatalogItem, type CatalogManual } from "@/lib/catalog";
 import { addFromResult, addUpload, listManuals, removeManual, type Manual, type ManualResult } from "@/lib/manuals";
@@ -78,6 +79,7 @@ export default function Hub() {
         if (!(await loadPrebuilt(m))) openManualPdf(m).catch(() => {});
       });
       router.push(`/build/${m.id}`);
+      setOpening(null);
     } catch (e) {
       setOpening(null);
       setError(e instanceof Error ? e.message : "Couldn't open this manual. Try again.");
@@ -123,6 +125,7 @@ export default function Hub() {
     try {
       const m = await addUpload(file);
       router.push(`/build/${m.id}`);
+      setOpening(null);
     } catch (e) {
       setOpening(null);
       setError(e instanceof Error ? e.message : "Couldn't save that PDF. Try again.");
@@ -290,10 +293,7 @@ export default function Hub() {
         <AnimatePresence>
           {(searching || live) && tab !== "mine" && (
             <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mt-6">
-              <h2 className="text-base font-semibold text-white/90">
-                {searching ? `Searching ${tab === "lego" ? "LEGO" : "IKEA"}…` : `Search results for “${live!.q}”`}
-              </h2>
-              {searching && <div className="scan-bar mt-3 h-0.5 w-full rounded-full" />}
+              {searching ? <SearchScan query={query.trim()} lego={tab === "lego"} /> : <h2 className="text-base font-semibold text-white/90">Search results for “{live!.q}”</h2>}
               {live && live.results.length === 0 && (
                 <div className="ui-empty mt-3 px-5 py-7 text-sm text-white/60">No manuals found. Try a different {tab === "lego" ? "set number" : "product name"}.</div>
               )}

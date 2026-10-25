@@ -12,15 +12,24 @@ const MAX_SIDE = 896; // enough detail for bricks, small enough to upload fast o
 const SAMPLE_W = 32;
 const SAMPLE_H = 24;
 
-const CameraFeed = forwardRef<CameraHandle>(function CameraFeed(_, ref) {
+type CameraStatus = { state: "starting" | "ready" | "error"; message?: string };
+
+const CameraFeed = forwardRef<CameraHandle, { onStatusChange?: (status: CameraStatus) => void }>(function CameraFeed({ onStatusChange }, ref) {
   const video = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const sampler = useRef<CanvasRenderingContext2D | null>(null);
 
   useEffect(() => {
+    onStatusChange?.(ready ? { state: "ready" } : error ? { state: "error", message: error } : { state: "starting" });
+  }, [ready, error, onStatusChange]);
+
+  useEffect(() => {
     let stream: MediaStream | null = null;
     let cancelled = false;
+    const timeout = window.setTimeout(() => {
+      if (!cancelled && !video.current?.videoWidth) setError((current) => current ?? "The camera preview did not start. Check camera permission, then refresh this page.");
+    }, 12000);
 
     async function start() {
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -35,13 +44,14 @@ const CameraFeed = forwardRef<CameraHandle>(function CameraFeed(_, ref) {
         if (cancelled) return stream.getTracks().forEach((t) => t.stop());
         if (video.current) video.current.srcObject = stream;
       } catch (e) {
-        setError(e instanceof Error && e.name === "NotAllowedError" ? "Allow camera access in your browser to check your build." : e instanceof Error ? `Camera unavailable: ${e.message}` : "Camera unavailable.");
+        if (!cancelled) setError(e instanceof Error && e.name === "NotAllowedError" ? "Allow camera access in your browser to check your build." : e instanceof Error ? `Camera unavailable: ${e.message}` : "Camera unavailable.");
       }
     }
     start();
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timeout);
       stream?.getTracks().forEach((t) => t.stop());
     };
   }, []);
@@ -80,7 +90,7 @@ const CameraFeed = forwardRef<CameraHandle>(function CameraFeed(_, ref) {
     <div className="absolute inset-0 bg-black">
       <video ref={video} autoPlay playsInline muted onPlaying={() => setReady(true)} className="h-full w-full object-cover" />
       {!ready && (
-        <div role="status" className="absolute inset-0 grid place-items-center bg-[radial-gradient(circle_at_50%_45%,#102436,#030912_70%)] p-6 text-center">
+        <div role="status" className="absolute inset-0 hidden place-items-center bg-[radial-gradient(circle_at_50%_45%,#102436,#030912_70%)] p-6 text-center sm:grid">
           <div className="max-w-xs">
             <span aria-hidden className="mx-auto grid h-16 w-16 place-items-center rounded-2xl border border-sky-300/25 bg-sky-300/10 text-sky-200">
               <svg viewBox="0 0 24 24" className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h4l2-2h4l2 2h4v12H4z" /><circle cx="12" cy="13" r="3" /></svg>

@@ -6,10 +6,12 @@
 // which capture() keeps (just scaled), so boxes in a captured photo can be mapped back onto the live video.
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import type { GrayFrame } from "@/lib/patchTracker";
 
 export type CameraHandle = {
   capture: (mode?: "standard" | "detail") => string | null;
   sample: () => Uint8ClampedArray | null;
+  trackFrame: () => GrayFrame | null;
   size: () => { w: number; h: number } | null;
   geometry: () => { videoWidth: number; videoHeight: number; boxWidth: number; boxHeight: number } | null;
 };
@@ -18,6 +20,8 @@ const MAX_SIDE = 896; // enough detail for bricks, small enough to upload fast o
 const AR_MAX_SIDE = 1280; // AR needs the small part and assembly in the same photo
 const SAMPLE_W = 32;
 const SAMPLE_H = 24;
+const TRACK_W = 96;
+const TRACK_H = 72;
 
 type CameraStatus = { state: "starting" | "ready" | "error"; message?: string };
 
@@ -26,6 +30,7 @@ const CameraFeed = forwardRef<CameraHandle, { onStatusChange?: (status: CameraSt
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const sampler = useRef<CanvasRenderingContext2D | null>(null);
+  const tracker = useRef<CanvasRenderingContext2D | null>(null);
 
   useEffect(() => {
     onStatusChange?.(ready ? { state: "ready" } : error ? { state: "error", message: error } : { state: "starting" });
@@ -101,6 +106,22 @@ const CameraFeed = forwardRef<CameraHandle, { onStatusChange?: (status: CameraSt
       const gray = new Uint8ClampedArray(SAMPLE_W * SAMPLE_H);
       for (let i = 0; i < gray.length; i++) gray[i] = (rgba[i * 4] * 3 + rgba[i * 4 + 1] * 6 + rgba[i * 4 + 2]) / 10;
       return gray;
+    },
+    trackFrame() {
+      const v = video.current;
+      if (!v || !v.videoWidth) return null;
+      if (!tracker.current) {
+        const canvas = document.createElement("canvas");
+        canvas.width = TRACK_W; canvas.height = TRACK_H;
+        tracker.current = canvas.getContext("2d", { willReadFrequently: true });
+      }
+      const ctx = tracker.current;
+      if (!ctx) return null;
+      ctx.drawImage(v, 0, 0, TRACK_W, TRACK_H);
+      const rgba = ctx.getImageData(0, 0, TRACK_W, TRACK_H).data;
+      const pixels = new Uint8ClampedArray(TRACK_W * TRACK_H);
+      for (let i = 0; i < pixels.length; i++) pixels[i] = (rgba[i * 4] * 3 + rgba[i * 4 + 1] * 6 + rgba[i * 4 + 2]) / 10;
+      return { pixels, width: TRACK_W, height: TRACK_H };
     },
   }));
 

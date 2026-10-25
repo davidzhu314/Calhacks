@@ -1,0 +1,195 @@
+{
+  "reference": "First green half-circle plate: tap its left and right end studs along the straight edge, in that order. The line spans seven stud pitches.",
+  "points": [
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 7,
+      "y": 0
+    }
+  ],
+  "steps": {
+    "5-0": {
+      "ref": "base",
+      "dx": 3,
+      "dy": 2,
+      "rotation": 0,
+      "layer": 1,
+      "footprint": {
+        "w": 2,
+        "h": 2
+      },
+      "source": "agent-estimated"
+    },
+    "5-1": {
+      "ref": "base",
+      "dx": 0,
+      "dy": 0,
+      "rotation": 0,
+      "layer": 0,
+      "footprint": {
+        "w": 8,
+        "h": 8
+      },
+      "source": "agent-estimated"
+    },
+    "6-0": {
+      "ref": "base",
+      "dx": 2,
+      "dy": 2,
+      "rotation": 0,
+      "layer": 2,
+      "footprint": {
+        "w": 4,
+        "h": 4
+      },
+      "source": "agent-estimated"
+    },
+    "7-0": {
+      "ref": "base",
+      "dx": 2,
+      "dy": 2,
+      "rotation": 0,
+      "layer": 3,
+      "footprint": {
+        "w": 4,
+        "h": 4
+      },
+      "source": "agent-estimated"
+    },
+    "7-1": {
+      "ref": "base",
+      "dx": 3,
+      "dy": 3,
+      "rotation": 0,
+      "layer": 4,
+      "footprint": {
+        "w": 2,
+        "h": 2
+      },
+      "source": "agent-estimated"
+    },
+    "8-0": {
+      "ref": "base",
+      "dx": 3,
+      "dy": 3,
+      "rotation": 0,
+      "layer": 5,
+      "footprint": {
+        "w": 2,
+        "h": 2
+      },
+      "source": "agent-estimated"
+    },
+    "8-1": {
+      "ref": "detached-tower",
+      "dx": 0,
+      "dy": 0,
+      "rotation": 0,
+      "layer": 0,
+      "footprint": {
+        "w": 2,
+        "h": 2
+      },
+      "source": "agent-estimated"
+    },
+    "9-0": {
+      "ref": "detached-tower",
+      "dx": 0,
+      "dy": 0,
+      "rotation": 0,
+      "layer": 1,
+      "footprint": {
+        "w": 2,
+        "h": 2
+      },
+      "source": "agent-estimated"
+    },
+    "9-1": {
+      "ref": "detached-tower",
+      "dx": 0,
+      "dy": 0,
+      "rotation": 90,
+      "layer": 2,
+      "footprint": {
+        "w": 2,
+        "h": 2
+      },
+      "source": "agent-estimated"
+    },
+    "9-2": {
+      "ref": "base",
+      "dx": 3,
+      "dy": 3,
+      "rotation": 0,
+      "layer": 6,
+      "footprint": {
+        "w": 2,
+        "h": 2
+      },
+      "source": "agent-estimated"
+    },
+    "10-0": {
+      "ref": "base",
+      "dx": 5,
+      "dy": 3,
+      "rotation": 90,
+      "layer": 7,
+      "footprint": {
+        "w": 3,
+        "h": 2
+      },
+      "source": "agent-estimated"
+    },
+    "11-0": {
+      "ref": "detached-flower",
+      "dx": 0,
+      "dy": 0,
+      "rotation": 0,
+      "layer": 0,
+      "footprint": {
+        "w": 2,
+        "h": 2
+      },
+      "source": "agent-estimated"
+    },
+    "11-1": {
+      "ref": "detached-flower",
+      "dx": 0,
+      "dy": 0,
+      "rotation": 0,
+      "layer": 1,
+      "footprint": {
+        "w": 2,
+        "h": 2
+      },
+      "source": "agent-estimated"
+    },
+    "12-0": {
+      "ref": "detached-flower",
+      "dx": 0,
+      "dy": 0,
+      "rotation": 0,
+      "layer": 2,
+      "footprint": {
+        "w": 4,
+        "h": 4
+      },
+      "source": "agent-estimated"
+    },
+    "12-1": {
+      "ref": "detached-flower",
+      "dx": 0,
+      "dy": 0,
+      "rotation": 90,
+      "layer": 2,
+      "footprint": {
+        "w": 4,
+        "h": 4
+      },
+      "source": "agent-estimated"
+    }
+  }
+}

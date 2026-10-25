@@ -14,7 +14,12 @@ import type { LocateResult } from "@/app/api/locate/route";
 import type { PartMark } from "@/components/HighlightBox";
 import CameraFeed, { type CameraHandle } from "@/components/CameraFeed";
 import ARGuideOverlay from "@/components/ARGuideOverlay";
+import BuildPlacementOverlay from "@/components/BuildPlacementOverlay";
+import ARAssistant from "@/components/ARAssistant";
 import { useArGuide } from "@/components/useArGuide";
+import { useBuildRegistration } from "@/components/useBuildRegistration";
+import { loadPlacements, type PlacementCatalog } from "@/lib/placements";
+import type { Point } from "@/lib/arGeometry";
 import PieceHologram from "@/components/PieceHologram";
 import { describePart, partLines } from "@/lib/parts";
 import { cutOutPiece, type Cutout } from "@/lib/cutout";
@@ -34,6 +39,8 @@ import { encodeCanvas } from "@/lib/encode";
 
 type Phase = { kind: "loading"; label: string } | { kind: "ready" } | { kind: "error"; message: string } | { kind: "done" };
 type Check = { state: "checking" } | { state: "result"; result: CheckResult; frame: string; id: number; sample: Uint8ClampedArray | null } | { state: "error"; message: string };
+const DEFAULT_REFERENCE: [Point, Point] = [{ x: 0, y: 0 }, { x: 7, y: 0 }];
+const ALIGN_PLACEHOLDER = { ref: "base", dx: 0, dy: 0, rotation: 0 as const, layer: 0, footprint: { w: 1, h: 1 }, source: "agent-estimated" as const };
 
 // Every step picture on one page, cut out and scaled to THUMB_H px tall, decoding the page only once.
 // Shared by the step strip and "where am I?" (see thumbsFor), so each picture is cut once per session.
@@ -270,6 +277,10 @@ export default function BuildView() {
   const [cameraStatus, setCameraStatus] = useState<{ state: "starting" | "ready" | "error"; message?: string }>({ state: "starting" });
   const [arEnabled, setArEnabled] = useState(false);
   const [arPartIdx, setArPartIdx] = useState(0);
+  const [placementCatalog, setPlacementCatalog] = useState<PlacementCatalog | null | undefined>(undefined);
+  const [arNudge, setArNudge] = useState<Point>({ x: 0, y: 0 });
+  const [arRotation, setArRotation] = useState(0);
+  const [arReplay, setArReplay] = useState(0);
   const [showManual, setShowManual] = useState(false); // true = blue "hologram" tint; default is the real colors
   const [zoomOpen, setZoomOpen] = useState(false); // full-screen zoom viewer for the manual picture
   // Phones get a swipeable step card: swipe down to see your build, up for full details.
@@ -328,12 +339,26 @@ export default function BuildView() {
   const step = steps[stepIdx] as ExtractedStep | undefined;
   const part = step?.parts[0];
   const arPart = step?.parts[arPartIdx] ?? part;
-  const ar = useArGuide({ enabled: arEnabled && phase.kind === "ready" && cameraStatus.state === "ready", key: `${stepKey}-${arPartIdx}`, camera, target: targetKey === stepKey ? target : null, previous, instruction: step?.instruction ?? "", part: arPart ? describePart(arPart) : "", parts: partLines(step?.parts ?? []), blocked: browserOpen || !!check });
+  useEffect(() => {
+    let active = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPlacementCatalog(undefined);
+    if (manual?.pdfPath) void loadPlacements(manual.pdfPath).then((result) => { if (active) setPlacementCatalog(result); });
+    else setPlacementCatalog(null);
+    return () => { active = false; };
+  }, [manual?.pdfPath]);
+  const storedPlacement = placementCatalog?.steps[stepKey] ?? null;
+  const basePlacement = storedPlacement?.ref === "base" ? storedPlacement : null;
+  const registration = useBuildRegistration(camera, arEnabled, manual?.id ?? "", placementCatalog?.points ?? DEFAULT_REFERENCE);
+  const fallbackNeeded = placementCatalog !== undefined && !basePlacement;
+  const ar = useArGuide({ enabled: arEnabled && fallbackNeeded && phase.kind === "ready" && cameraStatus.state === "ready", key: `${stepKey}-${arPartIdx}`, camera, target: targetKey === stepKey ? target : null, previous, instruction: step?.instruction ?? "", part: arPart ? describePart(arPart) : "", parts: partLines(step?.parts ?? []), blocked: browserOpen || !!check });
   const invalidateAr = ar.invalidate;
   const rescanAr = ar.rescan;
   useEffect(() => { // navigation resets the selected guide piece
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setArPartIdx(0);
+    setArNudge({ x: 0, y: 0 });
+    setArRotation(0);
   }, [stepKey]);
 
   // Finds part i of this step in the manual picture (once per part; shared by tap-to-find and the hologram).
@@ -1026,7 +1051,8 @@ export default function BuildView() {
   return (
     <main className="relative h-dvh w-full overflow-hidden bg-ink text-white">
       <CameraFeed ref={camera} onStatusChange={setCameraStatus} />
-      <ARGuideOverlay camera={camera} phase={check ? "off" : ar.phase} guide={ar.guide} message={ar.message} part={arPart} adjusting={ar.adjusting} rotation={ar.rotation} onAdjust={ar.adjust} />
+      {arEnabled && (basePlacement || registration.tapIndex !== null) && (!check || verdict === "pass") && <BuildPlacementOverlay camera={camera} registration={basePlacement ? registration.registration : null} placement={basePlacement ?? ALIGN_PLACEHOLDER} part={arPart} tapIndex={registration.tapIndex} onTap={registration.tap} adjusting={ar.adjusting} nudge={arNudge} onNudge={setArNudge} rotation={arRotation} replay={arReplay} success={verdict === "pass"} />}
+      {!basePlacement && <ARGuideOverlay camera={camera} phase={check ? "off" : ar.phase} guide={ar.guide} message={ar.message} part={arPart} adjusting={ar.adjusting} rotation={ar.rotation} onAdjust={ar.adjust} />}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-ink/70 via-transparent to-ink/80" />
       {/* the mistake boxes on the live camera too, while the camera stays where it was for the check */}
       {check?.state === "result" && verdict === "fix" && showBoxes && (
@@ -1056,7 +1082,7 @@ export default function BuildView() {
           className={`hud-panel flex min-h-11 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition hover:border-cyan-300/60 focus-visible:outline-2 focus-visible:outline-cyan-300 ${arEnabled ? "border-cyan-300/60 bg-cyan-300/15 text-cyan-100" : "border-white/15 text-white/85"}`}
         >
           <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${arEnabled ? "bg-cyan-300 shadow-[0_0_8px_#67e8f9]" : "bg-white/40"}`} />
-          AR {arEnabled ? "on" : "off"}
+          AR Guide {arEnabled ? "on" : "off"}
         </button>
         <button
           onClick={() => restart()}
@@ -1083,16 +1109,9 @@ export default function BuildView() {
         </div>
       </header>
 
-      {arEnabled && phase.kind === "ready" && !check && <div className="absolute left-3 top-[14rem] z-20 flex max-w-[min(13rem,55vw)] flex-col gap-1.5 sm:left-6 sm:top-44" aria-label="AR guide controls">
-        {step && step.parts.length > 1 && <div className="hud-panel !bg-ink/95 flex gap-1 overflow-x-auto rounded-xl p-1">{step.parts.map((p, i) => <button key={i} onClick={() => setArPartIdx(i)} aria-pressed={arPartIdx === i} className={`shrink-0 rounded-lg px-2 py-1.5 text-[11px] ${arPartIdx === i ? "bg-cyan-300 text-ink" : "text-white/80"}`}>{i + 1}. {p.name}</button>)}</div>}
-        <div className="hud-panel !bg-ink/95 flex flex-wrap gap-1 rounded-xl border border-white/15 p-1.5 text-[11px] shadow-xl">
-          <button onClick={ar.rescan} className="rounded-lg px-2 py-1.5 text-cyan-100 transition hover:bg-cyan-300/15">Rescan</button>
-          <button onClick={() => ar.setAdjusting((v) => !v)} aria-pressed={ar.adjusting} className={`rounded-lg px-2 py-1.5 transition hover:bg-cyan-300/15 ${ar.adjusting ? "bg-cyan-300 text-ink" : "text-cyan-100"}`}>{ar.adjusting ? "Tap camera…" : "Adjust placement"}</button>
-          {ar.guide?.placement && <><button onClick={() => ar.setRotation((v) => v - 15)} aria-label="Rotate guide left" className="rounded-lg px-2 py-1.5 text-cyan-100">↶</button><button onClick={() => ar.setRotation((v) => v + 15)} aria-label="Rotate guide right" className="rounded-lg px-2 py-1.5 text-cyan-100">↷</button></>}
-          <button onClick={ar.resetAdjustment} className="rounded-lg px-2 py-1.5 text-white/75 transition hover:bg-white/10">Reset adjustment</button>
-          <button onClick={() => setArEnabled(false)} className="rounded-lg px-2 py-1.5 text-white/75 transition hover:bg-white/10">Hide guide</button>
-        </div>
-      </div>}
+      {arEnabled && phase.kind === "ready" && !check && <ARAssistant status={basePlacement ? registration.tapIndex !== null ? registration.message : registration.registration ? registration.message || "Guiding from the first plate" : registration.message || "Align to the first plate" : ar.message || (ar.phase === "finding" ? "Locating assembly" : "Approximate 2D guide")} instruction={step?.instruction ?? ""} aligning={registration.tapIndex !== null} adjusting={ar.adjusting} hasPlacement={!!(basePlacement ? registration.registration : ar.guide?.placement)} onAlign={registration.align} onRescan={basePlacement ? registration.align : ar.rescan} onAdjust={() => ar.setAdjusting((v) => !v)} onRotate={(delta) => basePlacement ? setArRotation((v) => v + delta) : ar.setRotation((v) => v + delta)} onReset={() => { setArNudge({ x: 0, y: 0 }); setArRotation(0); if (!basePlacement) ar.resetAdjustment(); }} onReplay={() => setArReplay((v) => v + 1)} onHide={() => setArEnabled(false)}>
+        {step && step.parts.length > 1 && <div className="mt-2 flex gap-1 overflow-x-auto">{step.parts.map((piece, i) => <button key={i} onClick={() => setArPartIdx(i)} aria-pressed={arPartIdx === i} className={`shrink-0 rounded-md px-2 py-1 ${arPartIdx === i ? "bg-cyan-300 text-slate-950" : "bg-white/10 text-white"}`}>{i + 1}. {piece.name}</button>)}</div>}
+      </ARAssistant>}
 
       {/* reticle: shows while a check is running */}
       <AnimatePresence>

@@ -92,7 +92,7 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
             setMessage("");
           } else {
             candidate.current = result;
-            due.current = true;
+            due.current = false;
             setGuide({ ...result, assemblyBox: undefined, partBox: undefined, placement: undefined });
             setPhase("degraded");
             setMessage("Alignment uncertain — tap to position or rescan.");
@@ -100,6 +100,7 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
         })
         .catch((error) => {
           if (!responseIsCurrent({ key: requestKey, id }, { key: activeKey.current, id: requestId.current, enabled: current.current.enabled, blocked: current.current.blocked })) return;
+          due.current = false;
           setPhase("degraded");
           setMessage(error instanceof Error ? error.message : "Could not locate assembly. Tap to position.");
         })
@@ -109,10 +110,6 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
   }, [enabled, blocked, camera]);
 
   useEffect(() => {
-    if (enabled && !blocked && !anchor.current && !guide) due.current = true;
-  }, [enabled, blocked, guide]);
-
-  useEffect(() => {
     if (!enabled) return;
     const timer = window.setInterval(() => {
       if (document.hidden || busy.current) return;
@@ -120,7 +117,7 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
       if (!anchor.current) {
         if (viewReadyForRetry(failedView.current, previousView.current, sample, sceneDelta)) {
           failedView.current = null;
-          due.current = true;
+          due.current = false;
           setPhase("finding");
           setMessage("New view detected — looking for the build.");
         }
@@ -133,7 +130,7 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
         cache.current.delete(activeKey.current);
         baseline.current = null;
         setGuide(null);
-        setPhase("lost"); setMessage("Guide lost alignment — rescan or tap to position."); due.current = true; return;
+        setPhase("lost"); setMessage("Guide lost alignment — rescan or tap to position."); due.current = false; return;
       }
       if (sample && baseline.current && sceneDelta(sample, baseline.current) > MOVED) {
         if (anchor.current.pinned) {
@@ -142,7 +139,7 @@ export function useArGuide({ enabled, key, camera, target, previous, instruction
           baseline.current = null;
           setGuide(null);
         }
-        setPhase("degraded"); setMessage("Camera moved — confirming alignment."); due.current = true;
+        setPhase("degraded"); setMessage("Camera moved — rescan to restore alignment."); due.current = false;
       }
     }, 300);
     return () => window.clearInterval(timer);

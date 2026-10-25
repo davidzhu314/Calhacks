@@ -23,3 +23,7 @@ export function visibleInCover(point: Point, map: CoverMap): boolean {
   const p = frameToScreen(point, map) as Point;
   return p.x >= 0 && p.x <= map.boxW && p.y >= 0 && p.y <= map.boxH;
 }
+
+export function clampToBox(point: Point, box: Box): Point {
+  return { x: Math.min(box.right, Math.max(box.left, point.x)), y: Math.min(box.bottom, Math.max(box.top, point.y)) };
+}

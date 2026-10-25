@@ -2,6 +2,9 @@
   "name": "calhacks",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22.18"
+  },
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build --webpack",
@@ -11,6 +14,8 @@
     "test:boxes": "node --experimental-strip-types --no-warnings scripts/test-boxes.mjs",
     "test:ar": "node --experimental-strip-types --no-warnings scripts/test-ar-guide.mjs",
     "test:parts": "node --experimental-strip-types --no-warnings scripts/test-parts.mjs",
+    "test:e2e:local": "node scripts/e2e-local-start.mjs",
+    "test:e2e:ar": "node scripts/e2e-ar-guide.mjs",
     "test": "vitest run && npm run test:boxes && npm run test:commands && npm run test:ar && npm run test:parts"
   },
   "dependencies": {

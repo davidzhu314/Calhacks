@@ -2,17 +2,28 @@
 
 Hands-free build copilot (Cal Hacks 13.0). Show it any picture-based instructions; it watches you build through the camera, tells you what's next, and catches mistakes.
 
-All decisions so far: [DECISIONS.md](DECISIONS.md). A full README comes before submission.
+Implementation notes and known accuracy limits: [DECISIONS.md](DECISIONS.md).
 
-## Run it
+## Run the AR branch on a laptop
+
+Use Node.js 22.18 or newer and npm. The `.nvmrc` works with `nvm use` if you use nvm. macOS, Windows, and Linux can run the web app; use the commands below in a terminal (PowerShell on Windows).
 
 ```bash
-npm install
-cp .env.example .env.local   # then paste your OpenRouter key into .env.local
-npm run dev                  # http://localhost:3000
+git clone --branch ar-akhil https://github.com/davidzhu314/Calhacks.git
+cd Calhacks
+npm ci
+npm run dev
 ```
 
-The camera needs HTTPS on phones; use the Vercel deployment link there. `localhost` works on a laptop.
+Open [http://localhost:3000](http://localhost:3000), allow camera access, and choose **Exotic Parrot → Book 1** from the featured card. Turn on **AR Guide** in the build header, open the floating ✦ assistant, and choose **Align / Re-align**. Tap the marked A and B studs on the first green plate in the live camera view. The first plate's stored 2D ghost appears without an API key. These first-15 placements are estimates and need checking against real bricks.
+
+The included parrot manual and step images are in `public/steps`, so this path needs no PDF download or prior browser data. Each tester gets their own saved progress in their browser. If port 3000 is busy, run `npm run dev -- --port 3101` and open `http://localhost:3101`.
+
+**Optional AI features:** Copy `.env.example` to `.env.local` and set either `ANTHROPIC_API_KEY` or `OPENROUTER_API_KEY`, then restart the server. With a key, Claude can locate the loose source brick, estimate a dashed amber spot for steps without a usable stored placement, and run **Check build**. Without a key, the stored base-connected ghosts still work; source-piece boxes, AI fallback spots, checks, and voice AI do not. Do not commit `.env.local` or distribute a shared key.
+
+For an API-free visual preview of the approximate overlay, set `AR_GUIDE_DEMO=1` in `.env.local` and restart. Its fixed boxes are simulated and do **not** represent a detected brick or accurate camera placement. Remove that setting for real camera grounding.
+
+`localhost` is a secure context for camera access on the same laptop. Opening the laptop's LAN address from a phone generally needs HTTPS; use a trusted HTTPS tunnel or deployment to test on a phone. A laptop can also test the 390×844 layout through browser device emulation, but that does not validate real-phone alignment or touch behavior.
 
 ## Use it
 
@@ -37,4 +48,4 @@ The parrot demo has agent-estimated stud placements for its first 15 steps. Base
 
 The overlay pauses during a check and leaves mistake boxes to the existing check UI. Real-phone stud accuracy has not been verified; compare every footprint with the manual before relying on it. The guide has no depth or 3D pose estimate.
 
-Run `npm run lint`, `npx tsc --noEmit`, `npm test`, and `npm run build`. For the mocked mobile browser flow, run `npm run start -- --port 3101` after building, then `node scripts/e2e-ar-guide.mjs`. Set `E2E_BASE_URL` for another port. Playwright uses a fake camera and mocked guide/check endpoints, so it does not verify physical placement.
+Run `npm run lint`, `npx tsc --noEmit`, `npm test`, and `npm run build`. For automated 390×844 browser checks, install Playwright's Chromium once with `npx playwright install chromium` (on Linux, `npx playwright install --with-deps chromium` may be needed). Start `npm run start -- --port 3101` in one terminal. In another, run `npm run test:e2e:local` for the fresh-browser featured-manual flow, then `npm run test:e2e:ar` for placement, dragging, and Check build. Set `E2E_BASE_URL` if you use another port. The AR test uses a fake camera and mocked AI/check endpoints, so it needs no API key and does not verify physical placement. If you already have a local Chrome executable, `CHROME_PATH` may point to it instead of installing Playwright Chromium.

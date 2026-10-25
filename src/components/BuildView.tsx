@@ -19,6 +19,7 @@ import type { AssistAction } from "@/lib/assistReply";
 import { cutOutPiece, type Cutout } from "@/lib/cutout";
 import ManualPanel from "@/components/ManualPanel";
 import VoicePanel from "@/components/VoicePanel";
+import ShopSheet from "@/components/ShopSheet";
 import ZoomViewer from "@/components/ZoomViewer";
 import { matchCommand } from "@/lib/commands";
 import { getManual, getPageSteps, saveManual, savePageSteps, type Manual } from "@/lib/manuals";
@@ -327,6 +328,7 @@ export default function BuildView() {
   const [muted, setMuted] = useState(false);
   const [showManual, setShowManual] = useState(false); // true = blue "hologram" tint; default is the real colors
   const [zoomOpen, setZoomOpen] = useState(false); // full-screen zoom viewer for the manual picture
+  const [shop, setShop] = useState<{ part: string | null } | null>(null); // "Missing a part?" sheet; part = the one a check found missing
   // Phones get a swipeable step card: swipe down to see your build, up for full details.
   const isPhone = useIsPhone();
   const [sheetOpen, setSheetOpen] = useState(true);
@@ -1058,7 +1060,7 @@ export default function BuildView() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (zoomOpen || photoOpen) return; // the zoom viewer handles its own keys
+      if (zoomOpen || photoOpen || shop) return; // the zoom viewer and the shop sheet handle their own keys
       if (e.target instanceof HTMLElement && e.target.closest("button, input, textarea")) return; // a focused button handles its own Enter/Space
       if (e.key === "a" || e.key === "A") setAutoModeStored(!readAutoMode());
       if (e.key === "Escape") setAdvance(null);
@@ -1071,7 +1073,7 @@ export default function BuildView() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [go, runCheck, zoomOpen, photoOpen]);
+  }, [go, runCheck, zoomOpen, photoOpen, shop]);
 
   // Phones are short: while a check result shows, the step card drops the extras (holograms, chips, tip) to make room.
   const roomForResult = isPhone && check != null && check.state !== "checking";
@@ -1160,6 +1162,13 @@ export default function BuildView() {
       </AnimatePresence>
 
       {/* full-screen zoom viewer for the manual picture */}
+      {/* "Missing a part?": shopping links for a part of this step */}
+      <AnimatePresence>
+        {shop && manual && step && (
+          <ShopSheet key="shop" manual={manual} parts={step.parts} initial={shop.part} onClose={() => setShop(null)} />
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {zoomOpen && target && phase.kind === "ready" && (
           <ZoomViewer
@@ -1464,6 +1473,11 @@ export default function BuildView() {
                 >
                   {step.instruction}
                 </motion.h1>
+                {step.parts.length > 0 && manual && !roomForResult && (
+                  <button onClick={() => setShop({ part: null })} className="mt-1 text-[11px] font-medium text-sky-300/80 underline-offset-2 hover:text-sky-200 hover:underline">
+                    Missing a part?
+                  </button>
+                )}
 
                 {/* "I'm stuck": the step broken into smaller actions. Tap one to tick it off. */}
                 <AnimatePresence>
@@ -1566,12 +1580,12 @@ export default function BuildView() {
                                 data-issue-list
                               >
                                 {check.result.issues.map((issue, i) => (
-                                  <li key={i}>
+                                  <li key={i} className="flex gap-1.5">
                                     <button
                                       onClick={() => setIssuePick((p) => (p === i ? null : i))}
                                       aria-label={issueLabel(issue, i + 1)}
                                       aria-pressed={issuePick === i}
-                                      className={`flex w-full gap-2 rounded-lg px-2 py-1.5 text-left transition ${issuePick === i ? "bg-red-500/25" : "bg-black/20"}`}
+                                      className={`flex min-w-0 flex-1 gap-2 rounded-lg px-2 py-1.5 text-left transition ${issuePick === i ? "bg-red-500/25" : "bg-black/20"}`}
                                     >
                                       <span className="mt-px flex h-[18px] min-w-[18px] items-center justify-center gap-0.5 rounded bg-red-500 px-1 text-[11px] font-bold leading-[18px] text-white">
                                         <WarnGlyph />
@@ -1587,6 +1601,16 @@ export default function BuildView() {
                                         {!issue.box && <span className="block text-[10px] text-white/45">Couldn&apos;t pin this one on the photo</span>}
                                       </span>
                                     </button>
+                                    {/* a missing piece can be ordered: opens the shop sheet on that part */}
+                                    {issueCategory(issue.kind) === "missing" && manual && (
+                                      <button
+                                        onClick={() => setShop({ part: issue.part || null })}
+                                        aria-label={`Shop for ${issue.part || "the missing piece"}`}
+                                        className="shrink-0 self-start rounded-lg border border-sky-300/40 bg-sky-300/10 px-2.5 py-1.5 text-[11px] font-semibold text-sky-100 active:scale-95"
+                                      >
+                                        Shop
+                                      </button>
+                                    )}
                                   </li>
                                 ))}
                               </ol>

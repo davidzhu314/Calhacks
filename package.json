@@ -11,8 +11,9 @@
     "test:boxes": "node --experimental-strip-types --no-warnings scripts/test-boxes.mjs",
     "test:parts": "node --experimental-strip-types --no-warnings scripts/test-parts.mjs",
     "test:assist": "node --experimental-strip-types --no-warnings scripts/test-assist.mjs",
-    "test": "npm run test:boxes && npm run test:commands && npm run test:parts && npm run test:assist && npm run test:auto",
-    "test:auto": "node --experimental-strip-types --no-warnings scripts/test-auto.mjs"
+    "test": "npm run test:boxes && npm run test:commands && npm run test:parts && npm run test:assist && npm run test:auto && npm run test:shop",
+    "test:auto": "node --experimental-strip-types --no-warnings scripts/test-auto.mjs",
+    "test:shop": "node --experimental-strip-types --no-warnings scripts/test-shop.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",
